@@ -1,0 +1,218 @@
+/* Extension Manager buttons */
+.ext-mgr-btn {
+    padding: 3px 12px;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    cursor: pointer;
+    font-size: 0.8em;
+    line-height: 1.6;
+    vertical-align: middle;
+}
+
+.ext-mgr-btn:hover { opacity: 0.85; }
+.ext-mgr-btn:disabled { opacity: 0.5; cursor: wait; }
+
+.ext-mgr-install { background: #4CAF50; color: #fff !important; border-color: #43A047; }
+.ext-mgr-update { background: #FF9800; color: #fff !important; border-color: #F57C00; }
+/* Switching sources replaces the installed copy with one from a different
+   branch, which may be a downgrade — distinct from the green install and the
+   orange update so it is not clicked by reflex. */
+.ext-mgr-switch { background: #5C6BC0; color: #fff !important; border-color: #3F51B5; }
+
+/* A staged self-update: downloaded and verified, not yet in place. */
+.ext-mgr-self-pending { display: inline-flex; align-items: center; gap: 0.5em; }
+.ext-mgr-staged-note { font-size: 0.8em; opacity: 0.7; }
+.ext-mgr-discard {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.8em;
+    opacity: 0.7;
+    text-decoration: underline;
+    cursor: pointer;
+    color: inherit;
+}
+.ext-mgr-discard:hover { opacity: 1; }
+.ext-mgr-discard:disabled { cursor: wait; opacity: 0.4; }
+.ext-mgr-done { background: transparent; color: inherit !important; border-color: currentColor; cursor: default; opacity: 0.6; }
+.ext-mgr-queued { background: #1976D2; color: #fff !important; border-color: #1565C0; cursor: default; }
+
+/* Trash icon next to gear */
+.ext-mgr-trash {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    vertical-align: middle;
+    opacity: 0.4;
+}
+.ext-mgr-trash:hover { opacity: 1; }
+.ext-mgr-trash:disabled { opacity: 0.2; cursor: wait; }
+.ext-mgr-trash .icon { width: 16px; height: 16px; }
+
+.ext-mgr-installed-badge {
+    font-size: 0.8em;
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+/* Add repository input */
+.ext-mgr-add-repo {
+    margin: 12px 0 16px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.ext-mgr-url-input {
+    flex: 1;
+    max-width: 400px;
+    padding: 5px 10px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-size: 0.9em;
+    background: inherit;
+    color: inherit;
+    opacity: 0.6;
+}
+
+.ext-mgr-url-input:focus {
+    opacity: 1;
+}
+
+/* Repo catalog sections */
+.ext-mgr-repo-section {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid currentColor;
+    border-top-color: inherit;
+    opacity: 1;
+}
+
+.ext-mgr-repo-section h3 {
+    font-size: 1em;
+    margin: 0 0 8px;
+}
+
+.ext-mgr-loading {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+.ext-mgr-error {
+    color: #c62828;
+}
+
+.ext-mgr-repo-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.ext-mgr-repo-table th,
+.ext-mgr-repo-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid currentColor;
+    border-bottom-color: inherit;
+    opacity: 1;
+}
+
+.ext-mgr-repo-table th {
+    font-weight: 600;
+    font-size: 0.85em;
+    opacity: 0.6;
+}
+
+/* Fallback notification */
+.ext-mgr-notif {
+    position: fixed; bottom: 20px; right: 20px; z-index: 99999;
+    padding: 12px 24px; border-radius: 8px; font-size: 13px;
+    color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.3);
+    animation: ext-mgr-fade 4s ease-in-out;
+}
+.ext-mgr-notif-ok { background: #323232; }
+.ext-mgr-notif-error { background: #c62828; }
+@keyframes ext-mgr-fade {
+    0%, 80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Manual update dialog */
+.ext-mgr-overlay {
+    position: fixed; inset: 0; z-index: 100000;
+    background: rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center;
+}
+.ext-mgr-dialog {
+    background: var(--frss-background-color, #fff);
+    color: inherit;
+    border-radius: 8px;
+    padding: 20px 24px;
+    max-width: 520px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+}
+.ext-mgr-dialog h3 {
+    margin: 0 0 12px;
+    font-size: 1.1em;
+}
+.ext-mgr-dialog p {
+    margin: 0 0 12px;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+.ext-mgr-dialog pre {
+    background: rgba(0,0,0,.06);
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 0.82em;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0 0 12px;
+}
+.ext-mgr-dialog-note {
+    font-size: 0.82em !important;
+    font-style: italic;
+}
+.ext-mgr-dialog-error {
+    background: #f8d7da !important;
+    color: #842029;
+    border: 1px solid #f5c2c7;
+}
+
+/* Queued installs banner */
+.ext-mgr-queued-banner {
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 10px 16px;
+    border-radius: 4px;
+    border: 1px solid #90caf9;
+    margin-bottom: 16px;
+    font-size: 0.9em;
+    line-height: 1.6;
+}
+.ext-mgr-queued-detail {
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+/* Branch badge — distinguishes two sources that differ only by branch, and
+   flags when the installed copy came from a branch other than this table's. */
+.ext-mgr-branch {
+    display: inline-block;
+    padding: 0.05em 0.45em;
+    border: 1px solid currentColor;
+    border-radius: 0.75em;
+    font-size: 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+    opacity: 0.8;
+}
+
+.ext-mgr-branch-other {
+    font-weight: 500;
+    opacity: 0.65;
+}

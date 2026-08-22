@@ -1,0 +1,9 @@
+{
+    "name": "DuplicateRemover",
+    "version": "1.0.0",
+    "description": "自动检测并标记跨订阅源的重复文章。支持基于标题或标题+链接的去重策略。",
+    "author": "wgding",
+    "entrypoint": "DuplicateRemover",
+    "type": "user"
+}
+

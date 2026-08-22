@@ -1,0 +1,216 @@
+/* Hide feed column when viewing a single feed */
+.view-single-feed .flux .item.website { display: none !important; }
+
+/* ===== control_bar mode (default): nav sticks at page top ===== */
+.rv-scroll-active .nav_menu {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 999 !important;
+}
+
+/* title_row mode: nothing sticky */
+.rv-scroll-active.rv-no-sticky .nav_menu {
+    position: static !important;
+}
+
+/* ===== search_bar mode: restructured layout =====
+ *
+ * Desktop only. Below 840px FreshRSS turns .aside into a collapsed navigation
+ * drawer — `position: fixed; left: -1px; width: 0; z-index: 100` — that opens
+ * only when `.visible` is added. The rules below used to apply at every width,
+ * and because they override `width` but never `position`, the drawer became a
+ * permanently-open 301px panel pinned over the page: it covered the left of the
+ * toolbar and the article list, which read as "the toolbar moved right" when in
+ * fact the toolbar had not moved at all.
+ *
+ * Measured on FreshRSS 1.28.1 / theme Origine: `.aside` position flips
+ * fixed → static → fixed at viewport widths 737 / 1292 / 580 while its width
+ * stays 284.323px throughout. Both halves of the mechanism.
+ *
+ * 841px is FreshRSS's own breakpoint (max-width: 840px), not one of ours. If
+ * upstream moves theirs, this has to move with it.
+ *
+ * Reported as the first half of #14.
+ */
+@media (min-width: 841px) {
+    /* Header stays at top, #global becomes flex row, content scrolls independently */
+    .rv-scroll-active.rv-sticky-header {
+        height: 100% !important;
+        overflow: hidden !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header body {
+        height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        margin: 0 !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header .header {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header #global {
+        flex: 1 1 auto !important;
+        display: flex !important;
+        flex-direction: row !important;
+        overflow: hidden !important;
+        min-height: 0 !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header .aside {
+        display: block !important;
+        width: 301px !important;
+        flex-shrink: 0 !important;
+        overflow-y: auto !important;
+        will-change: scroll-position !important;
+        -webkit-overflow-scrolling: touch !important;
+        contain: strict !important;
+    }
+
+    /* Remove inner tree scroll — aside itself is the scroll container now */
+    .rv-scroll-active.rv-sticky-header .aside .tree {
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header #rv-content {
+        flex: 1 1 auto !important;
+        overflow-y: auto !important;
+        min-width: 0 !important;
+        will-change: scroll-position !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    .rv-scroll-active.rv-sticky-header #rv-content .nav_menu {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 999 !important;
+    }
+}
+
+/* ===== Trailing space, so any article can reach the top =====
+ *
+ * Scroll anchoring puts the opened article's header at the top of the scrolling
+ * area. That only works while enough content remains below it to scroll; near
+ * the end of a list the scroll clamps at its maximum and the article settles
+ * wherever the leftover height allows, with dead space under it. Nothing about
+ * this is specific to `k` — `j`, `p`, `n` and clicking a header all end the same
+ * way once the remaining articles are shorter than the viewport, which is why a
+ * short list shows it immediately and a long one only at the bottom.
+ *
+ * Measured on a live FreshRSS 1.28.1 instance, 11-article list, 1700x960,
+ * search_bar mode, target position 77px. Without trailing space five of ten
+ * openings landed at 135, 223, 257, 266 and 342px, each with scrollTop already
+ * equal to scrollHeight - clientHeight. With this rule, all twenty openings —
+ * ten with `j`, ten back with `k` — landed at 76-77px.
+ *
+ * One viewport is always sufficient: the worst case is a zero-height article
+ * last in the list, which needs exactly the viewport height behind it. The
+ * space is only reachable by scrolling past the final article, so it costs
+ * nothing until you are there, and `#stream` is the last child of the scrolling
+ * element in both arrangements — of #rv-content in the restructured search_bar
+ * layout, and of the page itself in every other mode.
+ *
+ * Reported as #18.
+ */
+.rv-scroll-active #stream {
+    padding-bottom: 100vh !important;
+}
+
+/* GPU-accelerate sticky nav to avoid repaint on scroll */
+.rv-scroll-active .nav_menu {
+    transform: translateZ(0) !important;
+}
+
+/* Limit layout recalc scope for individual articles */
+.rv-scroll-active .flux {
+    contain: layout style !important;
+}
+
+/* ...except the one article whose dropdown is open.
+ *
+ * `contain: layout` makes each article a stacking context, and a stacking
+ * context traps z-index. FreshRSS's topline dropdowns (My labels, Sharing)
+ * rely on `z-index: 1000` to paint over the articles below them, so once that
+ * index is resolved inside a single article row instead of against the page,
+ * the part of the menu that overflows a collapsed row is painted underneath
+ * the next article. Measured: the menu renders at full height and hangs ~70px
+ * past the row, and the topmost element inside that overflow is the following
+ * article's <time>. It is occluded, not clipped.
+ *
+ * Releasing containment for the open article only — never more than one at a
+ * time, since :target matches a single fragment — keeps the optimisation for
+ * every other row. Do not "simplify" this by deleting the rule above; layout
+ * containment is what scopes recalc on long lists, which is the point of the
+ * extension. Dropping to `contain: style` would fix the symptom by abandoning
+ * that.
+ *
+ * Reported as #14 (share menu) and #15 (label menu), which are one defect.
+ */
+.rv-scroll-active .flux:has(.dropdown-target:target) {
+    contain: none !important;
+}
+
+/* ===== Nav flex layout — only when we have inserted a feed name =====
+ *
+ * Gated on .rv-has-feed-name, set by initTitleBar(). This block used to key on
+ * .rv-scroll-active alone, so it applied whenever scroll anchoring was on, even
+ * with the feed name switched off. Two things followed from that:
+ *
+ *   1. FreshRSS centres the toolbar with `text-align: center` on .nav_menu, and
+ *      text-align does not position flex items. Forcing display:flex therefore
+ *      silently replaced centred with left-aligned for anyone who wanted sticky
+ *      scrolling but no feed name.
+ *   2. Stock .group is inline-flex inside a block, so groups wrap onto another
+ *      row when the window is too narrow. flex-wrap: nowrap removed that, and
+ *      because .group is also flex-shrink: 0, nothing could wrap OR shrink —
+ *      controls simply became unreachable instead of overflowing.
+ *
+ * So: no feed name, no restructuring — stock centred layout is left alone.
+ * With a feed name, flex gives us name-left/controls-right via .rv-spacer, and
+ * wrap keeps the stock overflow behaviour.
+ */
+.rv-scroll-active.rv-has-feed-name .nav_menu {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+}
+
+/* Feed/category name in toolbar */
+.rv-feed-name {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: inherit;
+    padding: 0 0.75em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+/* Spacer pushes controls right */
+.rv-spacer {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+}
+
+/* Keep control groups at their natural size so they wrap rather than squash.
+   Scoped to the same class as the flex block — without it these are stock
+   inline-flex elements and must not be given flex-item properties. */
+.rv-scroll-active.rv-has-feed-name .nav_menu .group {
+    flex-shrink: 0 !important;
+}
+
+/* ===== Flat article headers (strip decorative hover/active backgrounds) ===== */
+/* Preserve .not_read and .favorite fill colors — only strip hover/active/current decorations */
+.rv-scroll-active .flux:not(.not_read):not(.favorite):hover .flux_header { background-color: transparent !important; }
+.rv-scroll-active .flux.current:not(.not_read):not(.favorite) .flux_header { background-color: transparent !important; }
+
+/* Hide subscription management bar */
+.rv-hide-sub-mgmt .stick.configure-feeds {
+    display: none !important;
+}

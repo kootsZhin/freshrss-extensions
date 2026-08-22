@@ -1,0 +1,65 @@
+.notification.wallabag_button_good,
+.notification.wallabag_button_bad {
+  position: fixed;
+  color: #fff;
+  left: 20%;
+  right: 20%;
+}
+
+.notification.wallabag_button_bad {
+  background: #e74c3c;
+}
+
+.notification.wallabag_button_good {
+  background: #1abc9c;
+}
+
+input#wallabag_client_id {
+  width: 300px;
+}
+
+input#wallabag_client_secret {
+  width: 300px;
+}
+
+input#wallabag_keyboard_shortcut {
+  width: 30px;
+}
+
+.wb_listedNumbers {
+  list-style-type: decimal;
+}
+
+.wb_disabled {
+  display: none !important;
+}
+
+.wb_lds-dual-ring {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle;
+  line-height: 12px;
+  margin: -4px 0 0 -2px;
+}
+
+.wb_lds-dual-ring:after {
+  content: " ";
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #e74c3c;
+  border-color: #e74c3c transparent #e74c3c transparent;
+  animation: wb_lds-dual-ring 1.2s linear infinite;
+}
+
+@keyframes wb_lds-dual-ring {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}

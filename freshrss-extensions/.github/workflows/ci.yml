@@ -1,0 +1,32 @@
+name: CI
+
+# No branch filters. Gating on [main] meant PHP was only ever linted *after*
+# merge: pull_request runs had fired exactly twice in the repo's history, both
+# from Dependabot, so every hand-authored change reached main unlinted. Running
+# on every push and every pull request is what makes this a gate rather than a
+# post-mortem.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: PHP Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+      - name: Lint PHP files
+        run: find . -name '*.php' -print0 | xargs -0 -n1 php -l

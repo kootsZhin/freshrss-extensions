@@ -1,0 +1,72 @@
+<?php
+// 从用户配置读取当前值（参考 TranslateTitlesCN 的方式）
+$dedupe_mode = isset(FreshRSS_Context::$user_conf->DuplicateRemover_mode) 
+    ? FreshRSS_Context::$user_conf->DuplicateRemover_mode 
+    : 'title_link';
+?>
+
+<form action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>" method="post">
+    <input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
+    
+    <!-- 去重模式设置 -->
+    <div class="form-group">
+        <label class="group-name" for="dedupe_mode">去重模式:</label>
+        <div class="group-controls">
+            <select name="dedupe_mode" id="dedupe_mode">
+                <option value="title" <?php echo ($dedupe_mode === 'title') ? 'selected' : ''; ?>>
+                    仅基于标题
+                </option>
+                <option value="title_link" <?php echo ($dedupe_mode === 'title_link') ? 'selected' : ''; ?>>
+                    基于标题+链接（推荐）
+                </option>
+            </select>
+            <p class="help-block">
+                • 仅基于标题：如果标题相同，则视为重复（可能误判）<br/>
+                • 基于标题+链接：标题和链接都相同才视为重复（更准确）
+            </p>
+        </div>
+    </div>
+    
+    <!-- 日志设置 -->
+    <div class="form-group">
+        <label class="group-name">日志记录:</label>
+        <div class="group-controls">
+            <label>
+                <input type="checkbox" name="enable_log" value="1" <?php 
+                // 完全参考 TranslateTitlesCN 的方式：直接访问配置值
+                // TranslateTitlesCN 使用：FreshRSS_Context::$user_conf->TranslateTitles[$id] == '1'
+                // 我们直接访问，如果不存在则返回 null，然后检查是否等于 '1'
+                if (FreshRSS_Context::$user_conf->DuplicateRemover_log == '1') {
+                    echo ' checked="checked"';
+                }
+                ?> />
+                启用日志记录
+            </label>
+            <p class="help-block">
+                启用后会在日志中记录去重操作，用于调试
+            </p>
+        </div>
+    </div>
+    
+    <!-- 功能说明 -->
+    <div class="form-group">
+        <label class="group-name">功能说明:</label>
+        <div class="group-controls">
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>自动检测跨订阅源的重复文章</li>
+                <li>发现重复时，将新文章自动标记为已读</li>
+                <li>保留最早的文章为未读状态</li>
+                <li>与 FreshRSS 内置的 same_title_in_feed 功能互补</li>
+            </ul>
+        </div>
+    </div>
+    
+    <!-- 提交按钮 -->
+    <div class="form-group form-actions">
+        <div class="group-controls">
+            <button type="submit" class="btn btn-important"><?php echo _t('gen.action.submit'); ?></button>
+            <button type="reset" class="btn"><?php echo _t('gen.action.cancel'); ?></button>
+        </div>
+    </div>
+</form>
+
