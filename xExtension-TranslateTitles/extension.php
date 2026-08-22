@@ -18,16 +18,16 @@ class TranslateTitlesExtension extends Minz_Extension {
     ];
 
     public function init() {
-        error_log('TranslateTitlesCN: Plugin initializing...');
+        error_log('TranslateTitles: Plugin initializing...');
         
         if (!extension_loaded('mbstring')) {
-            error_log('TranslateTitlesCN 插件需要 PHP mbstring 扩展支持');
+            error_log('TranslateTitles 插件需要 PHP mbstring 扩展支持');
         }
         
         if (php_sapi_name() == 'cli') {
             // 确保 CLI 模式下有正确的用户上下文
             if (!FreshRSS_Context::$user_conf) {
-                error_log('TranslateTitlesCN: No user context in CLI mode');
+                error_log('TranslateTitles: No user context in CLI mode');
                 // 可能需要手动初始化用户上下文
                 $username = 'default'; // 或其他用户名
                 FreshRSS_Context::$user_conf = new FreshRSS_UserConfiguration($username);
@@ -54,8 +54,8 @@ class TranslateTitlesExtension extends Minz_Extension {
 
         FreshRSS_Context::$user_conf->save();
 
-        error_log('TranslateTitlesCN: Hooks registered');
-        // error_log('TranslateTitlesCN: Current translation config: ' . json_encode(FreshRSS_Context::$user_conf->TranslateTitles));
+        error_log('TranslateTitles: Hooks registered');
+        // error_log('TranslateTitles: Current translation config: ' . json_encode(FreshRSS_Context::$user_conf->TranslateTitles));
     }
 
     public function handleConfigureAction() {
@@ -75,7 +75,7 @@ class TranslateTitlesExtension extends Minz_Extension {
             FreshRSS_Context::$user_conf->TargetLang = $targetLang;
             
             $translateTitles = Minz_Request::param('TranslateTitles', array());
-            error_log("TranslateTitlesCN: Saving translation config: " . json_encode($translateTitles));
+            error_log("TranslateTitles: Saving translation config: " . json_encode($translateTitles));
             
             // 确保配置是数组形式
             if (!is_array($translateTitles)) {
@@ -87,10 +87,10 @@ class TranslateTitlesExtension extends Minz_Extension {
 
             // 保存并记录结果
             $saveResult = FreshRSS_Context::$user_conf->save();
-            error_log("TranslateTitlesCN: Config save result: " . ($saveResult ? 'success' : 'failed'));
+            error_log("TranslateTitles: Config save result: " . ($saveResult ? 'success' : 'failed'));
             
             // 保存后立即验证配置
-            error_log("TranslateTitlesCN: Saved config verification: " . 
+            error_log("TranslateTitles: Saved config verification: " . 
                 json_encode(FreshRSS_Context::$user_conf->TranslateTitles));
         }
     }

@@ -4,7 +4,7 @@ require_once('TranslationService.php');
 class TranslateController {
     public function translateTitle($title) {
         if (empty($title)) {
-            error_log("TranslateTitlesCN: Empty title provided");
+            error_log("TranslateTitles: Empty title provided");
             return '';
         }
 
@@ -22,18 +22,18 @@ class TranslateController {
         $attempts = 0;
         $sleepTime = 1; // 初始等待时间
 
-        error_log("TranslateTitlesCN: Service: google, Source: " . $sourceLang . ", Target: " . $targetLang . ", Title: " . $title);
+        error_log("TranslateTitles: Service: google, Source: " . $sourceLang . ", Target: " . $targetLang . ", Title: " . $title);
 
         while ($attempts < 2) {
             try {
                 $translatedTitle = $translationService->translate($title);
                 if (!empty($translatedTitle)) {
-                    error_log("TranslateTitlesCN: Translation successful: " . $translatedTitle);
+                    error_log("TranslateTitles: Translation successful: " . $translatedTitle);
                     break;
                 }
-                error_log("TranslateTitlesCN: Empty translation result on attempt " . ($attempts + 1));
+                error_log("TranslateTitles: Empty translation result on attempt " . ($attempts + 1));
             } catch (Exception $e) {
-                error_log("TranslateTitlesCN: Translation error on attempt " . ($attempts + 1) . " - " . $e->getMessage());
+                error_log("TranslateTitles: Translation error on attempt " . ($attempts + 1) . " - " . $e->getMessage());
                 $attempts++;
                 sleep($sleepTime);
                 $sleepTime *= 2; // 每次失败后增加等待时间
@@ -42,7 +42,7 @@ class TranslateController {
 
         // 如果翻译仍然失败，使用原始标题
         if (empty($translatedTitle)) {
-            error_log("TranslateTitlesCN: All translation attempts failed, returning original title");
+            error_log("TranslateTitles: All translation attempts failed, returning original title");
             return $title;
         }
 
