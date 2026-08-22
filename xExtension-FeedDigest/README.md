@@ -8,6 +8,9 @@ Automatically summarize newly retrieved RSS articles using LLM APIs (OpenAI-comp
 - 🌍 **Multi-language**: Translates article titles and summaries to your chosen language
 - ⚡ **Efficient Batch Processing**: Summarizes multiple articles in a single API call to reduce costs
 - 📊 **Per-feed Control**: Enable/disable summarization and configure batch size for each feed individually
+- 🕒 **Per-feed Scheduling**: Combine automatic, multiple daily times, and interval-based runs
+- ✅ **Read-state Control**: Choose whether successfully processed source articles are marked read
+- 🧭 **Feed Overview**: Adds a short high-level overview above each batch's article summaries
 - 🎯 **Smart Filtering**: Skips image-only and too-short articles, adds explanatory notes
 - 🎨 **Clean Output**: Creates formatted summary articles with links to originals
 
@@ -72,6 +75,12 @@ To enable summarization for a specific feed:
      - Articles are processed in batches to avoid timeouts
      - Each batch creates one summary article
      - Example: 35 unread articles with batch size 10 → 3 summary articles (10+10+10), 5 remain unread
+   - **Mark source articles as read**: Controls whether successfully processed source articles are marked read. Failed and skipped articles remain unread.
+   - **Schedule modes**: Select any combination of `Automatic`, `Daily times`, and `Interval`.
+     - Automatic runs during every maintenance cycle, as before.
+     - Daily times accepts comma-separated local `HH:MM` values, such as `06:00, 16:00`.
+     - Interval runs after the configured number of hours since the last successful run.
+     - Daily times use the timezone configured for the FreshRSS/PHP runtime.
 5. Click **Submit**
 
 ## API Endpoint Examples
@@ -117,12 +126,15 @@ Key: sk-or-v1-...
    - Each batch is sent to the LLM API in one request for efficiency
    - Each batch succeeds or fails independently
 5. **Summary Creation**: For each batch, a new "summary" article is created with:
+  - A short top-level overview generated from the batch's per-article summaries
    - Translated titles (in your destination language)
    - Concise summaries (2-4 sentences each)
    - Links to original articles
    - Clean HTML formatting
-6. **Mark as Read**: Only successfully summarized articles are marked as read
-7. **Auto-retry**: Failed batches remain unread and will be retried on the next update
+6. **Mark as Read**: Only successfully summarized articles are marked as read when enabled for that feed
+7. **Auto-retry**: Failed batches remain unread and will be retried on a later due run
+
+The overview requires one additional LLM request per multi-article batch. If that request fails, no summary article is created and source articles remain unread.
 
 ## PHP Timeout Configuration
 

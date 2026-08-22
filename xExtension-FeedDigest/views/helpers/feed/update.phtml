@@ -18,6 +18,10 @@ $core_html = ob_get_clean();
 // Build our extension fields
 $batchSize = $this->feed->attributeInt('feed_digest_batch_size') ?: 10;
 $enabled = $this->feed->attributeBoolean('feed_digest_enabled');
+$markRead = $this->feed->attributeString('feed_digest_mark_read') === '' || $this->feed->attributeBoolean('feed_digest_mark_read');
+$scheduleModes = array_filter(explode(',', $this->feed->attributeString('feed_digest_schedule_modes') ?: 'auto'));
+$scheduleTimes = $this->feed->attributeString('feed_digest_schedule_times');
+$scheduleInterval = $this->feed->attributeInt('feed_digest_schedule_interval') ?: 24;
 
 $our_fields = '
 <hr />
@@ -31,7 +35,46 @@ $our_fields = '
 				<option value=""' . ($enabled === null ? ' selected="selected"' : '') . '>' . _t('gen.short.no') . '</option>
 				<option value="1"' . ($enabled === true ? ' selected="selected"' : '') . '>' . _t('gen.short.yes') . '</option>
 			</select>
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.feed_setting_help', 'Automatically summarize new articles from this feed and mark originals as read.') . '</p>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.feed_setting_help', 'Automatically summarize new articles from this feed.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_mark_read">' . _t('ext.feed_digest.mark_read_label', 'Mark source articles as read') . '</label>
+		<div class="group-controls">
+			<select name="feed_digest_mark_read" id="feed_digest_mark_read" class="w50">
+				<option value="1"' . ($markRead ? ' selected="selected"' : '') . '>' . _t('gen.short.yes') . '</option>
+				<option value=""' . (!$markRead ? ' selected="selected"' : '') . '>' . _t('gen.short.no') . '</option>
+			</select>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.mark_read_help', 'Only successfully processed source articles are marked read. Failed and skipped articles remain unread.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_schedule_modes">' . _t('ext.feed_digest.schedule_modes_label', 'Schedule modes') . '</label>
+		<div class="group-controls">
+			<select name="feed_digest_schedule_modes[]" id="feed_digest_schedule_modes" class="w50" multiple="multiple" size="3">
+				<option value="auto"' . (in_array('auto', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_auto', 'Automatic') . '</option>
+				<option value="daily"' . (in_array('daily', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_daily', 'Daily times') . '</option>
+				<option value="interval"' . (in_array('interval', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_interval', 'Interval') . '</option>
+			</select>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_modes_help', 'Select one or more modes. Enabled modes are combined; Automatic runs on each maintenance cycle.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_schedule_times">' . _t('ext.feed_digest.schedule_times_label', 'Daily times') . '</label>
+		<div class="group-controls">
+			<input type="text" name="feed_digest_schedule_times" id="feed_digest_schedule_times" value="' . htmlspecialchars($scheduleTimes, ENT_QUOTES, 'UTF-8') . '" class="w50" placeholder="06:00, 16:00" />
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_times_help', 'Comma-separated local times in HH:MM format. Uses the FreshRSS/PHP timezone.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval hours') . '</label>
+		<div class="group-controls">
+			<input type="number" name="feed_digest_schedule_interval" id="feed_digest_schedule_interval" value="' . $scheduleInterval . '" min="1" max="168" class="w50" />
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_interval_help', 'Run after this many hours since the last successful scheduled run.') . '</p>
 		</div>
 	</div>
 
@@ -42,7 +85,7 @@ $our_fields = '
 			       value="' . $batchSize . '"
 			       min="1" max="50"
 			       class="w50" />
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.batch_size_help', 'When set to 1: Each article gets a translated copy with summary prepended, original is marked as read. When > 1: Creates a combined summary article and marks originals as read.') . '</p>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.batch_size_help', 'When set to 1, each article gets a translated copy. When greater than 1, a combined summary article is created.') . '</p>
 		</div>
 	</div>
 

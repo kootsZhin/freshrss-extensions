@@ -27,12 +27,7 @@ final class FeedDigestExtension extends Minz_Extension {
 	 * Hook to save per-feed setting when NEW feed is created
 	 */
 	public function handleFeedBeforeInsert(FreshRSS_Feed $feed): FreshRSS_Feed {
-		// Check if the feed form was submitted with our settings
-		$enabled = Minz_Request::paramTernary('feed_digest_enabled');
-		$feed->_attribute('feed_digest_enabled', $enabled);
-
-		$batchSize = Minz_Request::paramInt('feed_digest_batch_size');
-		$feed->_attribute('feed_digest_batch_size', $batchSize > 0 ? $batchSize : 10);
+		$this->applyFeedSettingsFromRequest($feed);
 
 		return $feed;
 	}
@@ -54,12 +49,7 @@ final class FeedDigestExtension extends Minz_Extension {
 				$feed = $feedDAO->searchById($feedId);
 
 				if ($feed !== null) {
-					// Read our form fields and save them
-					$enabled = Minz_Request::paramTernary('feed_digest_enabled');
-					$feed->_attribute('feed_digest_enabled', $enabled);
-
-					$batchSize = Minz_Request::paramInt('feed_digest_batch_size');
-					$feed->_attribute('feed_digest_batch_size', $batchSize > 0 ? $batchSize : 10);
+					$this->applyFeedSettingsFromRequest($feed);
 
 					// Update the feed with the new attributes
 					$feedDAO->updateFeed($feedId, ['attributes' => $feed->attributes()]);
@@ -70,6 +60,32 @@ final class FeedDigestExtension extends Minz_Extension {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Save and normalize settings submitted by a feed form.
+	 */
+	private function applyFeedSettingsFromRequest(FreshRSS_Feed $feed): void {
+		$feed->_attribute('feed_digest_enabled', Minz_Request::paramTernary('feed_digest_enabled'));
+
+		$batchSize = Minz_Request::paramInt('feed_digest_batch_size');
+		$feed->_attribute('feed_digest_batch_size', max(1, min(50, $batchSize ?: 10)));
+		$feed->_attribute('feed_digest_mark_read', Minz_Request::paramString('feed_digest_mark_read') === '1');
+
+		$modes = Minz_Request::paramArray('feed_digest_schedule_modes');
+		$modes = array_values(array_intersect(['auto', 'daily', 'interval'], $modes));
+		$feed->_attribute('feed_digest_schedule_modes', implode(',', array_unique($modes)) ?: 'auto');
+
+		$times = [];
+		foreach (preg_split('/[\s,]+/', Minz_Request::paramString('feed_digest_schedule_times')) ?: [] as $time) {
+			if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+				$times[] = $time;
+			}
+		}
+		$feed->_attribute('feed_digest_schedule_times', implode(',', array_unique($times)));
+
+		$intervalHours = Minz_Request::paramInt('feed_digest_schedule_interval');
+		$feed->_attribute('feed_digest_schedule_interval', max(1, min(168, $intervalHours ?: 24)));
 	}
 
 	/**
@@ -102,9 +118,14 @@ final class FeedDigestExtension extends Minz_Extension {
 				if (!$feed->attributeBoolean('feed_digest_enabled')) {
 					continue;
 				}
+				if (!$this->isFeedDue($feed)) {
+					continue;
+				}
 				$enabledCount++;
 
-				$this->processFeed($feed, $apiEndpoint, $secretKey, $model, $destLanguage, $maxContentLength);
+				if ($this->processFeed($feed, $apiEndpoint, $secretKey, $model, $destLanguage, $maxContentLength)) {
+					$this->recordFeedRun($feed);
+				}
 			}
 
 			if ($enabledCount === 0) {
@@ -119,7 +140,9 @@ final class FeedDigestExtension extends Minz_Extension {
 	 * Process a single feed: get unread articles, summarize in batches, and mark as read
 	 */
 	private function processFeed(FreshRSS_Feed $feed, string $apiEndpoint, string $secretKey,
-	                             string $model, string $destLanguage, int $maxContentLength): void {
+	                             string $model, string $destLanguage, int $maxContentLength): bool {
+		$completed = false;
+		$failed = false;
 		try {
 			$entryDAO = FreshRSS_Factory::createEntryDao();
 
@@ -137,7 +160,7 @@ final class FeedDigestExtension extends Minz_Extension {
 
 			// Skip if no unread articles
 			if (empty($entries)) {
-				return;
+				return true;
 			}
 
 			// Filter out summary articles (those we previously created) and already-processed articles
@@ -193,7 +216,7 @@ final class FeedDigestExtension extends Minz_Extension {
 			// Check if we have enough articles to process at least one batch
 			if ($totalWorthy < $batchSize) {
 				Minz_Log::warning("Feed Digest: Skipping {$feed->name()} - only {$totalWorthy} articles worth summarizing (batch size: {$batchSize})");
-				return; // Don't mark as read, wait for more articles
+				return true; // There was nothing to process in this run.
 			}
 
 			// Process in batches
@@ -219,8 +242,10 @@ final class FeedDigestExtension extends Minz_Extension {
 					}
 
 					$totalProcessed += count($batch);
+					$completed = true;
 
 				} catch (Exception $e) {
+					$failed = true;
 					Minz_Log::error("Feed Digest: Batch #{$batchNumber} failed for {$feed->name()}: " . $e->getMessage());
 					// This batch failed, but continue with next batch
 					// Failed articles stay unread and will be retried next time
@@ -231,11 +256,63 @@ final class FeedDigestExtension extends Minz_Extension {
 			$totalRemaining = $remainingWorthy + $totalImageOnly;
 
 			Minz_Log::notice("Feed Digest: {$feed->name()} complete - processed {$totalProcessed} articles in {$batchNumber} batches, {$totalRemaining} left unread ({$remainingWorthy} waiting for batch, {$totalImageOnly} image-only)");
+			return $completed && !$failed;
 
 		} catch (Exception $e) {
 			Minz_Log::error("Feed Digest error for feed {$feed->name()}: " . $e->getMessage());
 			// Articles stay unread - will retry next time
+			return false;
 		}
+	}
+
+	/**
+	 * Determine whether the feed has a scheduled run due in the current timezone.
+	 */
+	private function isFeedDue(FreshRSS_Feed $feed): bool {
+		$modes = array_filter(explode(',', $feed->attributeString('feed_digest_schedule_modes')));
+		if (empty($modes)) {
+			$modes = ['auto'];
+		}
+		if (in_array('auto', $modes, true)) {
+			return true;
+		}
+
+		$now = time();
+		$lastRun = $feed->attributeInt('feed_digest_last_run');
+		if (in_array('interval', $modes, true) && ($lastRun === 0 || $now >= $lastRun + ($feed->attributeInt('feed_digest_schedule_interval') ?: 24) * 3600)) {
+			return true;
+		}
+
+		if (in_array('daily', $modes, true)) {
+			$localNow = date('Y-m-d H:i');
+			$lastSlot = $feed->attributeString('feed_digest_last_slot');
+			foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
+				$slot = date('Y-m-d') . ' ' . $time;
+				if ($localNow >= $slot && $lastSlot !== $slot) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Persist the successful scheduled slot and run timestamp.
+	 */
+	private function recordFeedRun(FreshRSS_Feed $feed): void {
+		$feedDAO = FreshRSS_Factory::createFeedDao();
+		$feed->_attribute('feed_digest_last_run', time());
+		$lastSlot = date('Y-m-d H:i');
+		$today = date('Y-m-d');
+		foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
+			$slot = $today . ' ' . $time;
+			if ($slot <= $lastSlot) {
+				$lastSlot = $slot;
+			}
+		}
+		$feed->_attribute('feed_digest_last_slot', $lastSlot);
+		$feedDAO->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 	}
 
 	/**
@@ -497,9 +574,10 @@ PROMPT;
 
 		$this->createTranslatedArticle($feed, $entry, $result);
 
-		// Mark originals as read
-		$entryIds = array_map(fn($entry) => $entry->id(), $entries);
-		$entryDAO->markRead($entryIds, true);
+		if ($this->shouldMarkRead($feed)) {
+			$entryIds = array_map(fn($entry) => $entry->id(), $entries);
+			$entryDAO->markRead($entryIds, true);
+		}
 	}
 
 	/**
@@ -557,20 +635,44 @@ PROMPT;
 		$summaries = $this->parseLLMResponse($responseContent, count($entries));
 
 		// Create combined summary article
-		$this->createSummaryArticle($feed, $entries, $summaries);
+		$topSummary = $this->createTopLevelSummary($feed, $summaries, $apiEndpoint, $secretKey, $model, $destLanguage);
+		$this->createSummaryArticle($feed, $entries, $summaries, $topSummary);
 
-		// Mark originals as read
-		$entryIds = array_map(fn($entry) => $entry->id(), $entries);
-		$entryDAO->markRead($entryIds, true);
+		if ($this->shouldMarkRead($feed)) {
+			$entryIds = array_map(fn($entry) => $entry->id(), $entries);
+			$entryDAO->markRead($entryIds, true);
+		}
 	}
 
 	/**
 	 * Parse LLM response into structured summaries
+
+	private function shouldMarkRead(FreshRSS_Feed $feed): bool {
+		$markRead = $feed->attributeString('feed_digest_mark_read');
+		return $markRead === '' || $feed->attributeBoolean('feed_digest_mark_read');
+	}
+
+	private function createTopLevelSummary(FreshRSS_Feed $feed, array $summaries, string $apiEndpoint,
+	                                      string $secretKey, string $model, string $destLanguage): string {
+		$systemPrompt = <<<PROMPT
 	 *
 	 * For batch mode: {title, summary}
 	 * For translate-only mode: {title, summary, translated_content (nullable)}
 	 *
 	 * @return array<array{title: string, summary: string, translated_content?: string|null}>
+		$summaryData = [];
+		foreach ($summaries as $summary) {
+			$summaryData[] = ['title' => (string)$summary['title'], 'summary' => (string)$summary['summary']];
+		}
+		$userPrompt = "Article summaries to combine:\n\n" . json_encode($summaryData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+		$topSummary = trim(strip_tags($this->makeAPIRequest(
+			$systemPrompt, $userPrompt, $apiEndpoint, $secretKey, $model, $feed->name() . ' top-level summary'
+		)));
+		if ($topSummary === '' || strlen($topSummary) > 2000) {
+			throw new Exception('Invalid top-level summary response from LLM');
+		}
+		return $topSummary;
+	}
 	 */
 	private function parseLLMResponse(string $content, int $expectedCount): array {
 		// Try to extract JSON from response (in case LLM added extra text)
@@ -601,11 +703,11 @@ PROMPT;
 	/**
 	 * Create and insert synthetic summary article
 	 */
-	private function createSummaryArticle(FreshRSS_Feed $feed, array $entries, array $summaries): void {
+	private function createSummaryArticle(FreshRSS_Feed $feed, array $entries, array $summaries, string $topSummary = ''): void {
 		$entryDAO = FreshRSS_Factory::createEntryDao();
 
 		// Build summary content
-		$content = $this->formatSummaryContent($entries, $summaries);
+		$content = $this->formatSummaryContent($entries, $summaries, $topSummary);
 
 		// Generate summary article metadata
 		$timestamp = time();
@@ -638,8 +740,12 @@ PROMPT;
 	/**
 	 * Format summary content as HTML
 	 */
-	private function formatSummaryContent(array $entries, array $summaries): string {
+	private function formatSummaryContent(array $entries, array $summaries, string $topSummary = ''): string {
 		$html = '<div class="llm-summary">';
+		if ($topSummary !== '') {
+			$html .= '<div class="summary-overview"><strong>' . _t('ext.feed_digest.overview_label', 'Feed Digest Overview:') . '</strong> '
+			       . htmlspecialchars($topSummary, ENT_QUOTES, 'UTF-8') . '</div><hr>';
+		}
 
 		foreach ($entries as $index => $entry) {
 			$summary = $summaries[$index];

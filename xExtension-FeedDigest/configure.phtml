@@ -26,10 +26,11 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 		<p><strong><?= _t('ext.feed_digest.warning_title', 'Important Warnings:') ?></strong></p>
 		<ul>
 			<li><?= _t('ext.feed_digest.warning_cost', 'API calls cost money. Monitor your usage and costs regularly.') ?></li>
-			<li><?= _t('ext.feed_digest.warning_retry', 'Failed API calls will automatically retry on every feed update until successful.') ?></li>
+			<li><?= _t('ext.feed_digest.warning_retry', 'Failed API calls remain unread and retry on the next due run.') ?></li>
 			<li><?= _t('ext.feed_digest.warning_timeout', 'You may need to increase PHP max_execution_time for large batches (recommended: 300+ seconds).') ?></li>
 			<li><?= _t('ext.feed_digest.warning_rate_limit', 'High article counts may hit API rate limits.') ?></li>
-			<li><strong>Batch threshold:</strong> Set per-feed minimum article count in each feed's settings to control when summarization triggers.</li>
+			<li><?= _t('ext.feed_digest.warning_overview_cost', 'Each multi-article batch uses one additional API call for its short overview.') ?></li>
+			<li><strong><?= _t('ext.feed_digest.batch_threshold', 'Batch threshold:') ?></strong> <?= _t('ext.feed_digest.batch_threshold_help', 'Set the per-feed minimum article count to control when summarization triggers.') ?></li>
 		</ul>
 	</div>
 
@@ -152,11 +153,11 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 
 	<h3><?= _t('ext.feed_digest.how_it_works_title', 'How It Works') ?></h3>
 	<ol>
-		<li><?= _t('ext.feed_digest.how_step1', 'During scheduled feed updates, the extension checks each feed with summarization enabled.') ?></li>
+		<li><?= _t('ext.feed_digest.how_step1', 'During maintenance, the extension checks each enabled feed when one of its selected schedule modes is due.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step2', 'Unread articles are collected (up to the max articles limit) and sent to the LLM API in one batch.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step3', 'The LLM summarizes each article and translates titles to your destination language.') ?></li>
-		<li><?= _t('ext.feed_digest.how_step4', 'A combined summary article is created and added to the feed.') ?></li>
-		<li><?= _t('ext.feed_digest.how_step5', 'Original articles are marked as read.') ?></li>
+		<li><?= _t('ext.feed_digest.how_step4', 'A second LLM call creates a short overview above the per-article summaries.') ?></li>
+		<li><?= _t('ext.feed_digest.how_step5', 'Original articles are marked as read only when enabled for that feed.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step6', 'If any errors occur, articles remain unread and will be retried on the next update.') ?></li>
 	</ol>
 </div>
