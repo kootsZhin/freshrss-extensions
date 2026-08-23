@@ -39,11 +39,13 @@ final class FeedDigestExtension extends Minz_Extension {
 		if (Minz_Request::controllerName() === 'category' &&
 			Minz_Request::actionName() === 'update' &&
 			Minz_Request::isPost()) {
-			try {
-				$this->saveCategorySettingsFromRequest();
-			} catch (Throwable $e) {
-				Minz_Log::error('Feed Digest: Could not save category settings: ' . $e->getMessage());
-			}
+			register_shutdown_function(function (): void {
+				try {
+					$this->saveCategorySettingsFromRequest();
+				} catch (Throwable $e) {
+					Minz_Log::error('Feed Digest: Could not save category settings: ' . $e->getMessage());
+				}
+			});
 		}
 
 		// Check if we're on a feed update POST request
@@ -72,7 +74,7 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 	}
 
-	/** Save category settings before the native category controller persists attributes. */
+	/** Save category settings after the native category controller persists attributes. */
 	private function saveCategorySettingsFromRequest(): void {
 		$categoryId = Minz_Request::paramInt('id');
 		if ($categoryId <= 0) {
