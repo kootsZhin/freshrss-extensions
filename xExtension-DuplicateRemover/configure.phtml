@@ -1,0 +1,69 @@
+<?php
+$dedupe_mode = $this->getUserConfigurationValue('mode', 'title_link');
+$enable_log = $this->getUserConfigurationValue('enable_log', false);
+if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_mode) && $dedupe_mode === 'title_link') {
+    $dedupe_mode = FreshRSS_Context::$user_conf->DuplicateRemover_mode;
+}
+if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
+    $enable_log = FreshRSS_Context::$user_conf->DuplicateRemover_log === '1';
+}
+?>
+
+<form action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>" method="post">
+    <input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
+    
+    <div class="form-group">
+        <label class="group-name" for="dedupe_mode">Duplicate detection:</label>
+        <div class="group-controls">
+            <select name="dedupe_mode" id="dedupe_mode">
+                <option value="title" <?php echo ($dedupe_mode === 'title') ? 'selected' : ''; ?>>
+                    Title only
+                </option>
+                <option value="title_link" <?php echo ($dedupe_mode === 'title_link') ? 'selected' : ''; ?>>
+                    Title and link (recommended)
+                </option>
+            </select>
+            <p class="help-block">
+                • Title only: matching titles are treated as duplicates (may over-match)<br/>
+                • Title and link: both must match (more accurate)
+            </p>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <label class="group-name">Logging:</label>
+        <div class="group-controls">
+            <label>
+                <input type="checkbox" name="enable_log" value="1" <?php 
+                if ($enable_log) {
+                    echo ' checked="checked"';
+                }
+                ?> />
+                Enable logging
+            </label>
+            <p class="help-block">
+                Records duplicate actions in the server log for troubleshooting
+            </p>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <label class="group-name">What it does:</label>
+        <div class="group-controls">
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Detects duplicate articles across feeds</li>
+                <li>Marks the newer copy as read</li>
+                <li>Keeps the earliest copy unread</li>
+                <li>Complements FreshRSS's built-in same-title-in-feed option</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="form-group form-actions">
+        <div class="group-controls">
+            <button type="submit" class="btn btn-important"><?php echo _t('gen.action.submit'); ?></button>
+            <button type="reset" class="btn"><?php echo _t('gen.action.cancel'); ?></button>
+        </div>
+    </div>
+</form>
+

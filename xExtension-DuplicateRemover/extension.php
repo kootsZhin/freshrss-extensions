@@ -17,7 +17,7 @@ class DuplicateRemoverExtension extends Minz_Extension {
     }
     
     /**
-     * 加载用户配置
+     * Load user configuration.
      */
     private function loadConfiguration() {
         $mode = $this->getUserConfigurationValue('mode');
@@ -34,10 +34,10 @@ class DuplicateRemoverExtension extends Minz_Extension {
     }
     
     /**
-     * 检查重复文章
-     * 
-     * @param FreshRSS_Entry $entry 待插入的文章对象
-     * @return FreshRSS_Entry 处理后的文章对象
+     * Check whether an entry already exists.
+     *
+     * @param FreshRSS_Entry $entry Entry about to be inserted.
+     * @return FreshRSS_Entry Processed entry.
      */
     public function checkDuplicate($entry) {
         try {
@@ -52,7 +52,6 @@ class DuplicateRemoverExtension extends Minz_Extension {
             $user = FreshRSS_Context::user();
             
             if (empty($user)) {
-                // CLI 模式下可能需要手动获取用户
                 return $entry;
             }
             
@@ -88,10 +87,8 @@ class DuplicateRemoverExtension extends Minz_Extension {
             }
             
         } catch (Exception $e) {
-            // 发生错误时记录日志，但不影响文章插入
             error_log('DuplicateRemover: Error checking duplicate - ' . $e->getMessage());
         } catch (Error $e) {
-            // PHP 7+ 错误处理
             error_log('DuplicateRemover: Error checking duplicate - ' . $e->getMessage());
         }
         
@@ -116,7 +113,7 @@ class DuplicateRemoverExtension extends Minz_Extension {
     }
     
     /**
-     * 处理卸载操作
+     * Remove extension configuration.
      */
     public function handleUninstallAction() {
         $this->setUserConfiguration(array());

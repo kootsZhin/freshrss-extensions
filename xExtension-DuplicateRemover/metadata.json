@@ -1,0 +1,9 @@
+{
+    "name": "Duplicate Remover",
+    "version": "1.0.0",
+    "description": "Detects duplicate articles across feeds and marks newer copies as read.",
+    "author": "wgding",
+    "entrypoint": "DuplicateRemover",
+    "type": "user"
+}
+
