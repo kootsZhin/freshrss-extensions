@@ -7,7 +7,7 @@ if (!isset($this->category) || $this->category === null) {
 }
 
 $category = $this->category;
-$extension = Minz_ExtensionManager::findExtension('Feed Digest');
+$extension = Minz_ExtensionManager::findExtension('FeedDigest');
 $settings = $extension === null ? [] : ($extension->getCategorySettings()[(string)$category->id()] ?? []);
 $enabled = !empty($settings['enabled']);
 $markRead = !isset($settings['mark_read']) || (bool)$settings['mark_read'];
