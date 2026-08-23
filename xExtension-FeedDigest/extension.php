@@ -39,7 +39,13 @@ final class FeedDigestExtension extends Minz_Extension {
 		if (Minz_Request::controllerName() === 'category' &&
 			Minz_Request::actionName() === 'update' &&
 			Minz_Request::isPost()) {
-			$this->saveCategorySettingsFromRequest();
+			register_shutdown_function(function (): void {
+				try {
+					$this->saveCategorySettingsFromRequest();
+				} catch (Throwable $e) {
+					Minz_Log::error('Feed Digest: Could not save category settings: ' . $e->getMessage());
+				}
+			});
 		}
 
 		// Check if we're on a feed update POST request
@@ -68,30 +74,29 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 	}
 
-	/** Save category settings separately from FreshRSS's native category attributes. */
+	/** Save category settings after the native category controller persists attributes. */
 	private function saveCategorySettingsFromRequest(): void {
 		$categoryId = Minz_Request::paramInt('id');
 		if ($categoryId <= 0) {
 			return;
 		}
 
-		$settings = $this->getCategorySettings();
-		$settings[(string)$categoryId] = [
-			'enabled' => Minz_Request::paramTernary('feed_digest_category_enabled') === true,
-			'batch_size' => max(1, min(50, Minz_Request::paramInt('feed_digest_category_batch_size') ?: 10)),
-			'mark_read' => Minz_Request::paramString('feed_digest_category_mark_read') === '1',
-			'schedule_modes' => $this->normalizeScheduleModes(Minz_Request::paramArray('feed_digest_category_schedule_modes')),
-			'schedule_times' => $this->normalizeScheduleTimes(Minz_Request::paramString('feed_digest_category_schedule_times')),
-		];
-		$intervalHours = Minz_Request::paramInt('feed_digest_category_schedule_interval');
-		$settings[(string)$categoryId]['schedule_interval'] = max(1, min(168, $intervalHours ?: 24));
-		$this->setUserConfiguration(['category_settings' => $settings]);
-	}
+		$categoryDAO = FreshRSS_Factory::createCategoryDao();
+		$category = $categoryDAO->searchById($categoryId);
+		if ($category === null) {
+			return;
+		}
 
-	/** @return array<string,array<string,bool|int|string>> */
-	public function getCategorySettings(): array {
-		$settings = $this->getUserConfiguration()['category_settings'] ?? [];
-		return is_array($settings) ? $settings : [];
+		$category->_attribute('feed_digest_enabled', Minz_Request::paramTernary('feed_digest_category_enabled'));
+		$batchSize = Minz_Request::paramInt('feed_digest_category_batch_size');
+		$category->_attribute('feed_digest_batch_size', max(1, min(50, $batchSize ?: 10)));
+		$category->_attribute('feed_digest_mark_read', Minz_Request::paramString('feed_digest_category_mark_read') === '1');
+		$category->_attribute('feed_digest_schedule_modes', $this->normalizeScheduleModes(Minz_Request::paramArray('feed_digest_category_schedule_modes')));
+		$category->_attribute('feed_digest_schedule_times', $this->normalizeScheduleTimes(Minz_Request::paramString('feed_digest_category_schedule_times')));
+		$intervalHours = Minz_Request::paramInt('feed_digest_category_schedule_interval');
+		$category->_attribute('feed_digest_schedule_interval', max(1, min(168, $intervalHours ?: 24)));
+
+		$categoryDAO->updateCategory($categoryId, ['attributes' => $category->attributes()]);
 	}
 
 	private function normalizeScheduleModes(array $modes): string {
@@ -179,16 +184,14 @@ final class FeedDigestExtension extends Minz_Extension {
 			}
 
 			$categories = FreshRSS_Factory::createCategoryDao()->listCategories(prePopulateFeeds: true, details: false);
-			$categorySettings = $this->getCategorySettings();
 			$activeCategoryIds = [];
 			foreach ($categories as $category) {
-				$settings = $categorySettings[(string)$category->id()] ?? [];
-				$activeCategoryIds[$category->id()] = !empty($settings['enabled']);
-				if (empty($settings['enabled'])) {
+				$activeCategoryIds[$category->id()] = $category->attributeBoolean('feed_digest_enabled');
+				if (!$category->attributeBoolean('feed_digest_enabled')) {
 					continue;
 				}
 
-				$summaryFeed = $this->ensureCategorySummaryFeed($category, $settings);
+				$summaryFeed = $this->ensureCategorySummaryFeed($category);
 				if ($summaryFeed === null || !$this->isFeedDue($summaryFeed)) {
 					continue;
 				}
@@ -388,7 +391,7 @@ final class FeedDigestExtension extends Minz_Extension {
 		FreshRSS_Factory::createFeedDao()->updateFeed($scopeFeed->id(), ['attributes' => $scopeFeed->attributes()]);
 	}
 
-	private function ensureCategorySummaryFeed(FreshRSS_Category $category, array $settings = []): ?FreshRSS_Feed {
+	private function ensureCategorySummaryFeed(FreshRSS_Category $category): ?FreshRSS_Feed {
 		$feedDAO = FreshRSS_Factory::createFeedDao();
 		$url = 'https://freshrss-feed-digest.invalid/category/' . $category->id();
 		$feed = $feedDAO->searchByUrl($url);
@@ -420,12 +423,15 @@ final class FeedDigestExtension extends Minz_Extension {
 		$feed->_name('Feed Summary');
 		$feed->_categoryId($category->id());
 		$feed->_mute(true);
-		$feed->_attribute('feed_digest_enabled', true);
-		$feed->_attribute('feed_digest_batch_size', (int)($settings['batch_size'] ?? 10));
-		$feed->_attribute('feed_digest_mark_read', (bool)($settings['mark_read'] ?? true));
-		$feed->_attribute('feed_digest_schedule_modes', (string)($settings['schedule_modes'] ?? 'auto'));
-		$feed->_attribute('feed_digest_schedule_times', (string)($settings['schedule_times'] ?? ''));
-		$feed->_attribute('feed_digest_schedule_interval', (int)($settings['schedule_interval'] ?? 24));
+		foreach (['feed_digest_enabled', 'feed_digest_batch_size', 'feed_digest_mark_read',
+			'feed_digest_schedule_modes', 'feed_digest_schedule_times', 'feed_digest_schedule_interval'] as $key) {
+			$value = $category->attributeString($key);
+			if ($key === 'feed_digest_enabled') {
+				$value = $category->attributeBoolean($key);
+			} elseif ($key === 'feed_digest_batch_size' || $key === 'feed_digest_schedule_interval') {
+				$value = $category->attributeInt($key);
+			}
+			$feed->_attribute($key, $value);
 		}
 		$feedDAO->updateFeed($feed->id(), [
 			'name' => 'Feed Summary',

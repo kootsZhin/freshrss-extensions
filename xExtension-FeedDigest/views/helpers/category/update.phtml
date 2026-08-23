@@ -7,14 +7,12 @@ if (!isset($this->category) || $this->category === null) {
 }
 
 $category = $this->category;
-$extension = Minz_ExtensionManager::findExtension('FeedDigest');
-$settings = $extension === null ? [] : ($extension->getCategorySettings()[(string)$category->id()] ?? []);
-$enabled = !empty($settings['enabled']);
-$markRead = !isset($settings['mark_read']) || (bool)$settings['mark_read'];
-$batchSize = (int)($settings['batch_size'] ?? 10);
-$scheduleModes = array_filter(explode(',', (string)($settings['schedule_modes'] ?? 'auto')));
-$scheduleTimes = (string)($settings['schedule_times'] ?? '');
-$scheduleInterval = (int)($settings['schedule_interval'] ?? 24);
+$enabled = $category->attributeBoolean('feed_digest_enabled');
+$markRead = $category->attributeString('feed_digest_mark_read') === '' || $category->attributeBoolean('feed_digest_mark_read');
+$batchSize = $category->attributeInt('feed_digest_batch_size') ?: 10;
+$scheduleModes = array_filter(explode(',', $category->attributeString('feed_digest_schedule_modes') ?: 'auto'));
+$scheduleTimes = $category->attributeString('feed_digest_schedule_times');
+$scheduleInterval = $category->attributeInt('feed_digest_schedule_interval') ?: 24;
 
 ob_start();
 $coreView = APP_PATH . '/views/helpers/category/update.phtml';
