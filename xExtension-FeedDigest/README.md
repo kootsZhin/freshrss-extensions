@@ -13,6 +13,7 @@ Automatically summarize newly retrieved RSS articles using LLM APIs (OpenAI-comp
 - 🧭 **Feed Overview**: Adds a short high-level overview above each batch's article summaries
 - 🎯 **Smart Filtering**: Skips image-only and too-short articles, adds explanatory notes
 - 🎨 **Clean Output**: Creates formatted summary articles with links to originals
+- 🗂️ **Per-Category Summaries**: Creates a native `Feed Summary` feed for each enabled category
 
 ## Requirements
 
@@ -82,6 +83,12 @@ To enable summarization for a specific feed:
      - Interval runs after the configured number of hours since the last successful run.
      - Daily times use the timezone configured for the FreshRSS/PHP runtime.
 5. Click **Submit**
+
+### Per-Category Settings
+
+Category summaries are configured from **Settings → Feeds → [Select a category]**. Enable **Create a summary feed for this category** and configure the batch size, schedule, and source read-state options. FreshRSS will show one muted `Feed Summary` feed inside the category; it is managed by this extension and is not refreshed as an RSS source.
+
+Category processing aggregates articles from all feeds in the category. It runs independently from per-feed processing, so enabling both can create both feed-level and category-level summaries.
 
 ## API Endpoint Examples
 

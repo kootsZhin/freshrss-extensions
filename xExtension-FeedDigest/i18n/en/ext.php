@@ -40,11 +40,17 @@ return [
 		'per_feed_title' => 'Per-Feed Configuration',
 		'per_feed_help' => 'To enable LLM summarization for a specific feed, go to the feed\'s settings page and check the "Summarize articles with LLM" option.',
 		'per_feed_location' => 'Location: Settings → Feeds → [Select a feed] → Advanced Settings → Summarize articles with LLM',
+		'category_title' => 'Per-Category Configuration',
+		'category_help' => 'Category summaries create a native Feed Summary feed containing articles from every feed in the category.',
+		'category_location' => 'Location: Settings → Feeds → [Select a category] → Feed Digest Summary',
 
 		// Feed settings
 		'feed_setting_title' => 'Feed Digest',
 		'feed_setting_label' => 'Summarize articles with LLM',
 		'feed_setting_help' => 'Automatically summarize new articles from this feed.',
+		'category_setting_title' => 'Feed Digest Summary',
+		'category_setting_label' => 'Create a summary feed for this category',
+		'category_setting_help' => 'Create a Feed Summary feed containing summaries from all feeds in this category.',
 		'batch_size_label' => 'Articles per summary batch',
 		'batch_size_help' => 'When set to 1, each article gets a translated copy. When greater than 1, a combined summary article is created.',
 		'mark_read_label' => 'Mark source articles as read',
