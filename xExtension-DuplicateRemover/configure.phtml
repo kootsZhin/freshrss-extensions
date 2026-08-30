@@ -1,7 +1,7 @@
 <?php
-$dedupe_mode = $this->getUserConfigurationValue('mode', 'title_link');
+$dedupe_mode = $this->getUserConfigurationValue('mode', 'title');
 $enable_log = $this->getUserConfigurationValue('enable_log', false);
-if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_mode) && $dedupe_mode === 'title_link') {
+if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_mode) && $dedupe_mode === 'title') {
     $dedupe_mode = FreshRSS_Context::$user_conf->DuplicateRemover_mode;
 }
 if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
@@ -17,15 +17,15 @@ if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
         <div class="group-controls">
             <select name="dedupe_mode" id="dedupe_mode">
                 <option value="title" <?php echo ($dedupe_mode === 'title') ? 'selected' : ''; ?>>
-                    Title only
+                    Title only (recommended)
                 </option>
                 <option value="title_link" <?php echo ($dedupe_mode === 'title_link') ? 'selected' : ''; ?>>
-                    Title and link (recommended)
+                    Title and link
                 </option>
             </select>
             <p class="help-block">
-                • Title only: matching titles are treated as duplicates (may over-match)<br/>
-                • Title and link: both must match (more accurate)
+                • Title only: matching titles are treated as duplicates, even if links differ<br/>
+                • Title and link: both must match before an article is treated as a duplicate
             </p>
         </div>
     </div>
@@ -52,8 +52,9 @@ if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
         <div class="group-controls">
             <ul style="margin: 10px 0; padding-left: 20px;">
                 <li>Detects duplicate articles across feeds</li>
-                <li>Marks the newer copy as read</li>
-                <li>Keeps the earliest copy unread</li>
+                <li>Blocks new duplicate articles from being inserted</li>
+                <li>Marks existing newer duplicate copies as read</li>
+                <li>Keeps the earliest copy of each duplicate group unread</li>
                 <li>Complements FreshRSS's built-in same-title-in-feed option</li>
             </ul>
         </div>
@@ -66,4 +67,3 @@ if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
         </div>
     </div>
 </form>
-

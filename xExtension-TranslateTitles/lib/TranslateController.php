@@ -1,40 +1,50 @@
 <?php
-require_once('TranslationService.php');
+require_once __DIR__ . '/TranslationService.php';
 
 class TranslateController {
-    public function translateTitle($title) {
+    public function translateTitle($title, $userConf = null) {
         if (empty($title)) {
             error_log("TranslateTitles: Empty title provided");
             return '';
         }
 
+        if ($userConf === null) {
+            if (!class_exists('FreshRSS_Context', false) || !FreshRSS_Context::hasUserConf()) {
+                error_log("TranslateTitles: No user context for translation");
+                return $title;
+            }
+            $userConf = FreshRSS_Context::userConf();
+        }
+
         $sourceLang = TranslateTitlesExtension::normalizeLanguageCode(
-            FreshRSS_Context::$user_conf->SourceLang ?? null,
+            $userConf->SourceLang ?? null,
             TranslateTitlesExtension::DEFAULT_SOURCE_LANG
         );
         $targetLang = TranslateTitlesExtension::normalizeLanguageCode(
-            FreshRSS_Context::$user_conf->TargetLang ?? null,
+            $userConf->TargetLang ?? null,
             TranslateTitlesExtension::DEFAULT_TARGET_LANG
         );
 
         $translationService = new TranslationService($sourceLang, $targetLang);
         $translatedTitle = '';
-        $attempts = 0;
+        $maxAttempts = 2;
         $sleepTime = 1; // 初始等待时间
 
         error_log("TranslateTitles: Service: google, Source: " . $sourceLang . ", Target: " . $targetLang . ", Title: " . $title);
 
-        while ($attempts < 2) {
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
                 $translatedTitle = $translationService->translate($title);
                 if (!empty($translatedTitle)) {
                     error_log("TranslateTitles: Translation successful: " . $translatedTitle);
                     break;
                 }
-                error_log("TranslateTitles: Empty translation result on attempt " . ($attempts + 1));
-            } catch (Exception $e) {
-                error_log("TranslateTitles: Translation error on attempt " . ($attempts + 1) . " - " . $e->getMessage());
-                $attempts++;
+                error_log("TranslateTitles: Empty translation result on attempt " . ($attempt + 1));
+            } catch (Throwable $e) {
+                error_log("TranslateTitles: Translation error on attempt " . ($attempt + 1) . " - " . $e->getMessage());
+            }
+
+            if ($attempt + 1 < $maxAttempts) {
                 sleep($sleepTime);
                 $sleepTime *= 2; // 每次失败后增加等待时间
             }

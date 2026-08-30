@@ -9,6 +9,9 @@ declare(strict_types=1);
  */
 final class FeedDigestExtension extends Minz_Extension {
 
+	/** @var array<int, ?FreshRSS_Feed> */
+	private array $categorySummaryFeedCache = [];
+
 	/**
 	 * Initialize the extension and register hooks
 	 */
@@ -36,6 +39,12 @@ final class FeedDigestExtension extends Minz_Extension {
 	 * Hook to handle feed update form submissions
 	 */
 	public function handleFreshRSSInit(): void {
+		if (Minz_Request::controllerName() === 'category' &&
+			Minz_Request::actionName() === 'update' &&
+			Minz_Request::isPost()) {
+			$this->saveCategorySettingsFromRequest();
+		}
+
 		// Check if we're on a feed update POST request
 		if (Minz_Request::controllerName() === 'subscription' &&
 		    Minz_Request::actionName() === 'feed' &&
@@ -63,6 +72,60 @@ final class FeedDigestExtension extends Minz_Extension {
 	}
 
 	/**
+	 * Return per-category Feed Digest settings from user extension configuration.
+	 *
+	 * @return array<string,array<string,bool|int|string>>
+	 */
+	public function getCategorySettings(): array {
+		$userConfig = $this->getUserConfiguration();
+		$settings = is_array($userConfig) ? ($userConfig['category_settings'] ?? []) : [];
+		return is_array($settings) ? $settings : [];
+	}
+
+	/**
+	 * Save category settings separately from FreshRSS's native category attributes.
+	 */
+	private function saveCategorySettingsFromRequest(): void {
+		$categoryId = Minz_Request::paramInt('id');
+		if ($categoryId <= 0) {
+			return;
+		}
+
+		$settings = $this->getCategorySettings();
+		$settings[(string)$categoryId] = [
+			'enabled' => Minz_Request::paramTernary('feed_digest_category_enabled') === true,
+			'batch_size' => max(2, min(50, Minz_Request::paramInt('feed_digest_category_batch_size') ?: 10)),
+			'mark_read' => Minz_Request::paramString('feed_digest_category_mark_read') === '1',
+			'schedule_modes' => $this->normalizeScheduleModes(Minz_Request::paramArray('feed_digest_category_schedule_modes')),
+			'schedule_times' => $this->normalizeScheduleTimes(Minz_Request::paramString('feed_digest_category_schedule_times')),
+		];
+		$intervalHours = Minz_Request::paramInt('feed_digest_category_schedule_interval');
+		$settings[(string)$categoryId]['schedule_interval'] = max(1, min(168, $intervalHours ?: 24));
+
+		$userConfig = $this->getUserConfiguration();
+		if (!is_array($userConfig)) {
+			$userConfig = [];
+		}
+		$userConfig['category_settings'] = $settings;
+		$this->setUserConfiguration($userConfig);
+	}
+
+	private function normalizeScheduleModes(array $modes): string {
+		$modes = array_values(array_intersect(['auto', 'daily', 'interval'], $modes));
+		return implode(',', array_unique($modes)) ?: 'auto';
+	}
+
+	private function normalizeScheduleTimes(string $times): string {
+		$normalized = [];
+		foreach (preg_split('/[\s,]+/', $times) ?: [] as $time) {
+			if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+				$normalized[] = $time;
+			}
+		}
+		return implode(',', array_unique($normalized));
+	}
+
+	/**
 	 * Save and normalize settings submitted by a feed form.
 	 */
 	private function applyFeedSettingsFromRequest(FreshRSS_Feed $feed): void {
@@ -72,17 +135,8 @@ final class FeedDigestExtension extends Minz_Extension {
 		$feed->_attribute('feed_digest_batch_size', max(1, min(50, $batchSize ?: 10)));
 		$feed->_attribute('feed_digest_mark_read', Minz_Request::paramString('feed_digest_mark_read') === '1');
 
-		$modes = Minz_Request::paramArray('feed_digest_schedule_modes');
-		$modes = array_values(array_intersect(['auto', 'daily', 'interval'], $modes));
-		$feed->_attribute('feed_digest_schedule_modes', implode(',', array_unique($modes)) ?: 'auto');
-
-		$times = [];
-		foreach (preg_split('/[\s,]+/', Minz_Request::paramString('feed_digest_schedule_times')) ?: [] as $time) {
-			if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
-				$times[] = $time;
-			}
-		}
-		$feed->_attribute('feed_digest_schedule_times', implode(',', array_unique($times)));
+		$feed->_attribute('feed_digest_schedule_modes', $this->normalizeScheduleModes(Minz_Request::paramArray('feed_digest_schedule_modes')));
+		$feed->_attribute('feed_digest_schedule_times', $this->normalizeScheduleTimes(Minz_Request::paramString('feed_digest_schedule_times')));
 
 		$intervalHours = Minz_Request::paramInt('feed_digest_schedule_interval');
 		$feed->_attribute('feed_digest_schedule_interval', max(1, min(168, $intervalHours ?: 24)));
@@ -108,13 +162,54 @@ final class FeedDigestExtension extends Minz_Extension {
 				return;
 			}
 
-			// Get all feeds
+			// Get all feeds and categories
 			$feedDAO = FreshRSS_Factory::createFeedDao();
 			$feeds = $feedDAO->listFeeds();
+			$categoryDAO = FreshRSS_Factory::createCategoryDao();
+			$categories = $categoryDAO->listCategories(prePopulateFeeds: true, details: false);
+			$categorySettings = $this->getCategorySettings();
+			$existingCategoryIds = [];
 
-			// Process each feed with summarization enabled
+			// Process enabled category summaries before per-feed processing so
+			// category mode can see all unread articles in the category.
+			$categoryEnabledCount = 0;
+			foreach ($categories as $category) {
+				$existingCategoryIds[$category->id()] = true;
+				$settings = $categorySettings[(string)$category->id()] ?? [];
+				if (empty($settings['enabled'])) {
+					continue;
+				}
+
+				$categoryEnabledCount++;
+				$summaryFeed = $this->ensureCategorySummaryFeed($category, $settings);
+				if ($summaryFeed === null || !$this->isFeedDue($summaryFeed)) {
+					continue;
+				}
+
+				$sourceFeedIds = [];
+				foreach ($category->feeds() as $categoryFeed) {
+					if (!$this->isCategorySummaryFeed($categoryFeed)) {
+						$sourceFeedIds[] = $categoryFeed->id();
+					}
+				}
+
+				if ($sourceFeedIds !== [] &&
+					$this->processFeed($summaryFeed, $apiEndpoint, $secretKey, $model, $destLanguage, $maxContentLength, $sourceFeedIds)) {
+					$this->recordFeedRun($summaryFeed);
+				}
+			}
+
+			// Category feed creation above may have added feeds; refresh the
+			// list before orphan cleanup and per-feed processing.
+			$feeds = $feedDAO->listFeeds();
+			$this->deleteOrphanCategorySummaryFeeds($feeds, $existingCategoryIds);
+
+			// Process per-feed summaries, excluding category summary feeds.
 			$enabledCount = 0;
 			foreach ($feeds as $feed) {
+				if ($this->isCategorySummaryFeed($feed)) {
+					continue;
+				}
 				if (!$feed->attributeBoolean('feed_digest_enabled')) {
 					continue;
 				}
@@ -128,8 +223,8 @@ final class FeedDigestExtension extends Minz_Extension {
 				}
 			}
 
-			if ($enabledCount === 0) {
-				Minz_Log::warning('Feed Digest: No feeds have summarization enabled');
+			if ($enabledCount === 0 && $categoryEnabledCount === 0) {
+				Minz_Log::warning('Feed Digest: No feeds or categories have summarization enabled');
 			}
 		} catch (Exception $e) {
 			Minz_Log::error('Feed Digest error: ' . $e->getMessage());
@@ -140,23 +235,36 @@ final class FeedDigestExtension extends Minz_Extension {
 	 * Process a single feed: get unread articles, summarize in batches, and mark as read
 	 */
 	private function processFeed(FreshRSS_Feed $feed, string $apiEndpoint, string $secretKey,
-	                             string $model, string $destLanguage, int $maxContentLength): bool {
+	                             string $model, string $destLanguage, int $maxContentLength,
+	                             ?array $sourceFeedIds = null): bool {
 		$completed = false;
 		$failed = false;
 		try {
 			$entryDAO = FreshRSS_Factory::createEntryDao();
 
-			// Get batch size for this feed (default 10)
+			// Get batch size for this feed (default 10). Category mode is
+			// summary-only, so its effective minimum is 2.
 			$batchSize = $feed->attributeInt('feed_digest_batch_size') ?: 10;
+			if ($sourceFeedIds !== null) {
+				$batchSize = max(2, min(50, $batchSize));
+			} else {
+				$batchSize = max(1, min(50, $batchSize));
+			}
 
 			// Fetch plenty of articles (max 200)
 			$fetchLimit = 200;
 
-			// Get unread articles for this feed
-			$entries = iterator_to_array(
-				$entryDAO->listWhere('f', $feed->id(), FreshRSS_Entry::STATE_NOT_READ,
-				                    order: 'ASC', limit: $fetchLimit)
-			);
+			// Get unread articles for this feed or, in category mode, from
+			// every non-summary source feed in the category.
+			$entries = [];
+			foreach ($sourceFeedIds ?? [$feed->id()] as $sourceFeedId) {
+				$entries = array_merge($entries, iterator_to_array(
+					$entryDAO->listWhere('f', $sourceFeedId, FreshRSS_Entry::STATE_NOT_READ,
+					                    order: 'ASC', limit: $fetchLimit)
+				));
+			}
+			usort($entries, static fn(FreshRSS_Entry $left, FreshRSS_Entry $right): int => $left->date(true) <=> $right->date(true));
+			$entries = array_slice($entries, 0, $fetchLimit);
 
 			// Skip if no unread articles
 			if (empty($entries)) {
@@ -172,6 +280,12 @@ final class FeedDigestExtension extends Minz_Extension {
 				}
 				if ($this->isAlreadyProcessed($entry)) {
 					continue; // Skip articles already processed (prevents infinite API calls)
+				}
+				if ($sourceFeedIds !== null && $this->isProcessedForScope($feed, $entry)) {
+					continue; // Already included in this category summary.
+				}
+				if ($sourceFeedIds === null && $this->isProcessedByCategoryScope($entry)) {
+					continue; // Already included in an enabled category summary.
 				}
 				$nonSummaryEntries[] = $entry;
 			}
@@ -233,7 +347,7 @@ final class FeedDigestExtension extends Minz_Extension {
 				try {
 					Minz_Log::notice("Feed Digest: Processing {$feed->name()} batch #{$batchNumber} - {$batchSize} articles");
 
-					if ($batchSize === 1) {
+					if ($sourceFeedIds === null && $batchSize === 1) {
 						$this->processTranslation($feed, $batch, $apiEndpoint, $secretKey, $model, $destLanguage);
 						Minz_Log::notice("Feed Digest: Successfully translated {$feed->name()} batch #{$batchNumber}");
 					} else {
@@ -242,6 +356,9 @@ final class FeedDigestExtension extends Minz_Extension {
 					}
 
 					$totalProcessed += count($batch);
+					if ($sourceFeedIds !== null) {
+						$this->recordProcessedForScope($feed, $batch);
+					}
 					$completed = true;
 
 				} catch (Exception $e) {
@@ -265,6 +382,133 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 	}
 
+	private function isProcessedForScope(FreshRSS_Feed $scopeFeed, FreshRSS_Entry $entry): bool {
+		$processed = $scopeFeed->attributeArray('feed_digest_processed_entries') ?: [];
+		return isset($processed[$entry->id()]);
+	}
+
+	private function recordProcessedForScope(FreshRSS_Feed $scopeFeed, array $entries): void {
+		$processed = $scopeFeed->attributeArray('feed_digest_processed_entries') ?: [];
+		$now = time();
+		foreach ($entries as $entry) {
+			$processed[$entry->id()] = $now;
+		}
+		if (count($processed) > 2000) {
+			asort($processed, SORT_NUMERIC);
+			$processed = array_slice($processed, -2000, null, true);
+		}
+		$scopeFeed->_attribute('feed_digest_processed_entries', $processed);
+		FreshRSS_Factory::createFeedDao()->updateFeed($scopeFeed->id(), ['attributes' => $scopeFeed->attributes()]);
+	}
+
+	private function isProcessedByCategoryScope(FreshRSS_Entry $entry): bool {
+		$feedId = (int)$entry->feedId();
+		if ($feedId <= 0) {
+			return false;
+		}
+
+		$feed = FreshRSS_Factory::createFeedDao()->searchById($feedId);
+		if ($feed === null) {
+			return false;
+		}
+
+		$categoryId = $feed->categoryId();
+		if ($categoryId <= 0) {
+			return false;
+		}
+
+		$summaryFeed = $this->findCategorySummaryFeedByCategoryId($categoryId);
+		return $summaryFeed !== null && $this->isProcessedForScope($summaryFeed, $entry);
+	}
+
+	private function categorySummaryFeedUrl(int $categoryId): string {
+		return 'https://freshrss-feed-digest.invalid/category/' . $categoryId;
+	}
+
+	private function findCategorySummaryFeedByCategoryId(int $categoryId): ?FreshRSS_Feed {
+		if (array_key_exists($categoryId, $this->categorySummaryFeedCache)) {
+			return $this->categorySummaryFeedCache[$categoryId];
+		}
+
+		$feedDAO = FreshRSS_Factory::createFeedDao();
+		$feed = $feedDAO->searchByUrl($this->categorySummaryFeedUrl($categoryId));
+		if ($feed !== null && $this->isCategorySummaryFeed($feed)) {
+			$this->categorySummaryFeedCache[$categoryId] = $feed;
+			return $feed;
+		}
+
+		$this->categorySummaryFeedCache[$categoryId] = null;
+		return null;
+	}
+
+	private function ensureCategorySummaryFeed(FreshRSS_Category $category, array $settings = []): ?FreshRSS_Feed {
+		$feedDAO = FreshRSS_Factory::createFeedDao();
+		$url = $this->categorySummaryFeedUrl($category->id());
+		$feed = $feedDAO->searchByUrl($url);
+
+		if ($feed === null) {
+			try {
+				$feed = new FreshRSS_Feed($url, false);
+				$feed->_name($category->name() . ' Summary');
+				$feed->_website($url);
+				$feed->_description('Feed Digest summaries for ' . $category->name());
+				$feed->_categoryId($category->id());
+				$feed->_mute(true);
+				$feed->_attribute('feed_digest_summary_category', (string)$category->id());
+				$feed->_attribute('feed_digest_enabled', true);
+				$id = $feedDAO->addFeedObject($feed);
+				if ($id === false) {
+					return null;
+				}
+				$feed = $feedDAO->searchById((int)$id);
+			} catch (Exception $e) {
+				Minz_Log::error('Feed Digest: Could not create category summary feed: ' . $e->getMessage());
+				return null;
+			}
+		}
+
+		if ($feed === null || !$this->isCategorySummaryFeed($feed)) {
+			return null;
+		}
+
+		$batchSize = max(2, min(50, (int)($settings['batch_size'] ?? 10)));
+		$feed->_name($category->name() . ' Summary');
+		$feed->_categoryId($category->id());
+		$feed->_mute(true);
+		$feed->_attribute('feed_digest_summary_category', (string)$category->id());
+		$feed->_attribute('feed_digest_enabled', true);
+		$feed->_attribute('feed_digest_batch_size', $batchSize);
+		$feed->_attribute('feed_digest_mark_read', (bool)($settings['mark_read'] ?? true));
+		$feed->_attribute('feed_digest_schedule_modes', (string)($settings['schedule_modes'] ?? 'auto'));
+		$feed->_attribute('feed_digest_schedule_times', (string)($settings['schedule_times'] ?? ''));
+		$feed->_attribute('feed_digest_schedule_interval', (int)($settings['schedule_interval'] ?? 24));
+
+		$feedDAO->updateFeed($feed->id(), [
+			'name' => $category->name() . ' Summary',
+			'category' => $category->id(),
+			'ttl' => $feed->ttl(true),
+			'attributes' => $feed->attributes(),
+		]);
+
+		$this->categorySummaryFeedCache[$category->id()] = $feed;
+		return $feed;
+	}
+
+	private function isCategorySummaryFeed(?FreshRSS_Feed $feed): bool {
+		return $feed !== null && $feed->attributeString('feed_digest_summary_category') !== '';
+	}
+
+	private function deleteOrphanCategorySummaryFeeds(array $feeds, array $existingCategoryIds): void {
+		$feedDAO = FreshRSS_Factory::createFeedDao();
+		foreach ($feeds as $feed) {
+			$summaryCategoryId = $feed->attributeInt('feed_digest_summary_category');
+			if ($summaryCategoryId > 0 && empty($existingCategoryIds[$summaryCategoryId])) {
+				$feedDAO->deleteFeed($feed->id());
+				Minz_Log::notice('Feed Digest: Removed summary feed for deleted category ' . $summaryCategoryId);
+			}
+		}
+	}
+
 	/**
 	 * Determine whether the feed has a scheduled run due in the current timezone.
 	 */
@@ -273,17 +517,19 @@ final class FeedDigestExtension extends Minz_Extension {
 		if (empty($modes)) {
 			$modes = ['auto'];
 		}
-		if (in_array('auto', $modes, true)) {
+
+		$explicitModes = array_values(array_diff($modes, ['auto']));
+		if ($explicitModes === []) {
 			return true;
 		}
 
 		$now = time();
 		$lastRun = $feed->attributeInt('feed_digest_last_run');
-		if (in_array('interval', $modes, true) && ($lastRun === 0 || $now >= $lastRun + ($feed->attributeInt('feed_digest_schedule_interval') ?: 24) * 3600)) {
+		if (in_array('interval', $explicitModes, true) && ($lastRun === 0 || $now >= $lastRun + ($feed->attributeInt('feed_digest_schedule_interval') ?: 24) * 3600)) {
 			return true;
 		}
 
-		if (in_array('daily', $modes, true)) {
+		if (in_array('daily', $explicitModes, true)) {
 			$localNow = date('Y-m-d H:i');
 			$lastSlot = $feed->attributeString('feed_digest_last_slot');
 			foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
@@ -303,15 +549,18 @@ final class FeedDigestExtension extends Minz_Extension {
 	private function recordFeedRun(FreshRSS_Feed $feed): void {
 		$feedDAO = FreshRSS_Factory::createFeedDao();
 		$feed->_attribute('feed_digest_last_run', time());
-		$lastSlot = date('Y-m-d H:i');
-		$today = date('Y-m-d');
-		foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
-			$slot = $today . ' ' . $time;
-			if ($slot <= $lastSlot) {
-				$lastSlot = $slot;
+		$modes = array_filter(explode(',', $feed->attributeString('feed_digest_schedule_modes')));
+		if (in_array('daily', $modes, true)) {
+			$lastSlot = date('Y-m-d H:i');
+			$today = date('Y-m-d');
+			foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
+				$slot = $today . ' ' . $time;
+				if ($slot <= $lastSlot) {
+					$lastSlot = $slot;
+				}
 			}
+			$feed->_attribute('feed_digest_last_slot', $lastSlot);
 		}
-		$feed->_attribute('feed_digest_last_slot', $lastSlot);
 		$feedDAO->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 	}
 
@@ -645,21 +894,19 @@ PROMPT;
 	}
 
 	/**
-	 * Parse LLM response into structured summaries
-
+	 * Determine whether successfully processed source articles should be marked read.
+	 */
 	private function shouldMarkRead(FreshRSS_Feed $feed): bool {
 		$markRead = $feed->attributeString('feed_digest_mark_read');
 		return $markRead === '' || $feed->attributeBoolean('feed_digest_mark_read');
 	}
 
+	/**
+	 * Create a top-level overview for a batch of summaries.
+	 */
 	private function createTopLevelSummary(FreshRSS_Feed $feed, array $summaries, string $apiEndpoint,
 	                                      string $secretKey, string $model, string $destLanguage): string {
-		$systemPrompt = <<<PROMPT
-	 *
-	 * For batch mode: {title, summary}
-	 * For translate-only mode: {title, summary, translated_content (nullable)}
-	 *
-	 * @return array<array{title: string, summary: string, translated_content?: string|null}>
+		$systemPrompt = "Create a concise overview in {$destLanguage} of these article summaries. Return plain text only, no more than 2 sentences.";
 		$summaryData = [];
 		foreach ($summaries as $summary) {
 			$summaryData[] = ['title' => (string)$summary['title'], 'summary' => (string)$summary['summary']];
@@ -673,6 +920,9 @@ PROMPT;
 		}
 		return $topSummary;
 	}
+
+	/**
+	 * Parse LLM response into structured summaries.
 	 */
 	private function parseLLMResponse(string $content, int $expectedCount): array {
 		// Try to extract JSON from response (in case LLM added extra text)
