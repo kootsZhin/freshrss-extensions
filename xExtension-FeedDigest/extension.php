@@ -323,7 +323,12 @@ final class FeedDigestExtension extends Minz_Extension {
 			$batchSize = max(0, (int)($feed->attributeString('feed_digest_batch_size') ?? 0));
 			$titlesOnly = $feed->attributeBoolean('feed_digest_titles_only');
 			if ($sourceFeedIds !== null) {
-				$batchSize = max(2, $batchSize);
+				// Category summaries must never translate single articles, so
+				// force a positive batch to at least 2. Keep 0 = unlimited
+				// intact (the old max(2, 0) turned "unlimited" into 2).
+				if ($batchSize > 0 && $batchSize < 2) {
+					$batchSize = 2;
+				}
 			}
 
 			// Fetch all unread articles. FreshRSS requires an int limit, so use
@@ -669,46 +674,67 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 
 		$now = time();
-		$lastRun = $feed->attributeInt('feed_digest_last_run');
-		if (in_array('interval', $explicitModes, true) && ($lastRun === 0 || $now >= $lastRun + ($feed->attributeInt('feed_digest_schedule_interval') ?: 24) * 3600)) {
-			return true;
-		}
+		$nextRunAt = $feed->attributeInt('feed_digest_next_run_at') ?? 0;
 
-		if (in_array('daily', $explicitModes, true)) {
-			$localNow = date('Y-m-d H:i');
-			$lastSlot = $feed->attributeString('feed_digest_last_slot');
-			foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
-				$slot = date('Y-m-d') . ' ' . $time;
-				if ($localNow >= $slot && $lastSlot !== $slot) {
-					return true;
-				}
-			}
-		}
-
-		return false;
+		// No stored next-run time means the feed has never run yet: due once,
+		// after which recordFeedRun() will set the next precise time.
+		return $nextRunAt <= 0 || $nextRunAt <= $now;
 	}
 
 	/**
-	 * Persist the successful scheduled slot and run timestamp.
+	 * Persist the successful run and compute the exact next run time.
 	 */
 	private function recordFeedRun(FreshRSS_Feed $feed): void {
 		$feedDAO = FreshRSS_Factory::createFeedDao();
 		$feed->_attribute('feed_digest_last_run', time());
 		$feed->_attribute('feed_digest_backoff_until', 0);
 		$feed->_attribute('feed_digest_last_error', '');
+		$feed->_attribute('feed_digest_next_run_at', $this->computeNextRunAt($feed, time()));
+		$feedDAO->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
+	}
+
+	/**
+	 * Compute the exact timestamp of the next scheduled run.
+	 *
+	 * Interval mode: now + interval hours.
+	 * Daily mode: the next configured HH:MM strictly after now, or the first
+	 * slot of the next day if all of today's slots have passed.
+	 * Automatic mode: 0 (always due).
+	 */
+	private function computeNextRunAt(FreshRSS_Feed $feed, int $now): int {
 		$modes = array_filter(explode(',', $feed->attributeString('feed_digest_schedule_modes')));
-		if (in_array('daily', $modes, true)) {
-			$lastSlot = date('Y-m-d H:i');
-			$today = date('Y-m-d');
-			foreach (array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))) as $time) {
-				$slot = $today . ' ' . $time;
-				if ($slot <= $lastSlot) {
-					$lastSlot = $slot;
+		if (empty($modes)) {
+			$modes = ['auto'];
+		}
+
+		$explicitModes = array_values(array_diff($modes, ['auto']));
+		if (in_array('interval', $explicitModes, true)) {
+			$intervalHours = max(1, $feed->attributeInt('feed_digest_schedule_interval') ?: 24);
+			return $now + $intervalHours * 3600;
+		}
+
+		if (in_array('daily', $explicitModes, true)) {
+			$times = array_values(array_filter(explode(',', $feed->attributeString('feed_digest_schedule_times'))));
+			sort($times);
+			$today = date('Y-m-d', $now);
+			foreach ($times as $time) {
+				$ts = strtotime($today . ' ' . $time);
+				if ($ts !== false && $ts > $now) {
+					return $ts;
 				}
 			}
-			$feed->_attribute('feed_digest_last_slot', $lastSlot);
+			// All today's slots have passed; use the first slot of tomorrow.
+			$tomorrow = date('Y-m-d', $now + 86400);
+			foreach ($times as $time) {
+				$ts = strtotime($tomorrow . ' ' . $time);
+				if ($ts !== false) {
+					return $ts;
+				}
+			}
+			return $now + 86400;
 		}
-		$feedDAO->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
+
+		return 0;
 	}
 
 	/**
@@ -723,7 +749,7 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 
 		// Check title pattern (legacy)
-		if (str_starts_with($entry->title(), '[Summary]')) {
+		if (str_starts_with($entry->title(), '[Summary]') || str_starts_with($entry->title(), '[Digest]') || str_starts_with($entry->title(), '[Titles]')) {
 			return true;
 		}
 
@@ -949,7 +975,7 @@ final class FeedDigestExtension extends Minz_Extension {
 		}
 
 		$content = $this->formatTitlesOnlyContent($grouped, $overview['overview'], $overview['bullets']);
-		$this->createDigestArticle($feed, $entries, $content);
+		$this->insertUniqueDigest($entryDAO, $feed, $entries, $content, 'AI Titles');
 
 		if ($this->shouldMarkRead($feed)) {
 			$entryIds = array_map(fn($entry) => $entry->id(), $entries);
@@ -1013,35 +1039,6 @@ final class FeedDigestExtension extends Minz_Extension {
 
 		$html .= '</div>';
 		return $html;
-	}
-
-	/**
-	 * Create a digest article (shared by titles-only mode).
-	 */
-	private function createDigestArticle(FreshRSS_Feed $feed, array $entries, string $content): void {
-		$entryDAO = FreshRSS_Factory::createEntryDao();
-		$timestamp = time();
-		$title = '[Titles] ' . $feed->name() . ' - ' . date('Y-m-d H:i:s', $timestamp);
-		$guid = 'llm-summary-' . $feed->id() . '-' . $timestamp;
-		$link = !empty($entries) ? $entries[0]->link() : $feed->website();
-
-		$values = [
-			'id' => uTimeString(),
-			'guid' => $guid,
-			'title' => $title,
-			'author' => 'AI Titles',
-			'content' => $content,
-			'link' => $link,
-			'date' => $timestamp,
-			'lastSeen' => $timestamp,
-			'hash' => md5($content),
-			'is_read' => false,
-			'is_favorite' => false,
-			'id_feed' => $feed->id(),
-			'tags' => '',
-		];
-
-		$entryDAO->addEntry($values, false);
 	}
 
 	/**
@@ -1323,11 +1320,22 @@ PROMPT;
 
 		// Build summary content
 		$content = $this->formatSummaryContent($entries, $summaries, $topSummary, $bullets);
+		$this->insertUniqueDigest($entryDAO, $feed, $entries, $content, 'AI Summary');
+	}
 
+	/**
+	 * Insert a digest entry with a deterministic GUID so a re-run of the same
+	 * batch (multiple maintenance hooks per cron cycle) cannot create duplicates.
+	 */
+	private function insertUniqueDigest(FreshRSS_EntryDAO $entryDAO, FreshRSS_Feed $feed, array $entries,
+	                                    string $content, string $author): void {
 		// Generate summary article metadata
 		$timestamp = time();
-		$title = '[Summary] ' . $feed->name() . ' - ' . date('Y-m-d H:i:s', $timestamp);
-		$guid = 'llm-summary-' . $feed->id() . '-' . $timestamp;
+		$feedId = $feed->id();
+		$entryIds = array_map(static fn($entry) => $entry->id(), $entries);
+		sort($entryIds);
+		$title = ($author === 'AI Titles' ? '[Titles] ' : '[Summary] ') . $feed->name() . ' - ' . date('Y-m-d H:i:s', $timestamp);
+		$guid = 'llm-summary-' . $feedId . '-' . md5(implode(',', $entryIds));
 
 		// Use first article's link or feed website
 		$link = !empty($entries) ? $entries[0]->link() : $feed->website();
@@ -1337,7 +1345,7 @@ PROMPT;
 			'id' => uTimeString(),
 			'guid' => $guid,
 			'title' => $title,
-			'author' => 'AI Summary',
+			'author' => $author,
 			'content' => $content,
 			'link' => $link,
 			'date' => $timestamp,
@@ -1345,7 +1353,7 @@ PROMPT;
 			'hash' => md5($content),
 			'is_read' => false,
 			'is_favorite' => false,
-			'id_feed' => $feed->id(),
+			'id_feed' => $feedId,
 			'tags' => '',
 		];
 
