@@ -29,8 +29,8 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 			<li><?= _t('ext.feed_digest.warning_retry', 'Failed API calls remain unread and retry on the next due run.') ?></li>
 			<li><?= _t('ext.feed_digest.warning_timeout', 'You may need to increase PHP max_execution_time for large batches (recommended: 300+ seconds).') ?></li>
 			<li><?= _t('ext.feed_digest.warning_rate_limit', 'High article counts may hit API rate limits.') ?></li>
-			<li><?= _t('ext.feed_digest.warning_overview_cost', 'Each multi-article batch uses one additional API call for its short overview.') ?></li>
-			<li><strong><?= _t('ext.feed_digest.batch_threshold', 'Batch threshold:') ?></strong> <?= _t('ext.feed_digest.batch_threshold_help', 'Set the per-feed minimum article count to control when summarization triggers.') ?></li>
+			<li><?= _t('ext.feed_digest.warning_overview_cost', 'Each multi-article batch uses one additional API call for its short overview and theme bullets.') ?></li>
+			<li><strong><?= _t('ext.feed_digest.batch_threshold', 'Batch threshold:') ?></strong> <?= _t('ext.feed_digest.batch_threshold_help', 'Set the number of articles per summary batch; 0 means no limit (everything in one run).') ?></li>
 		</ul>
 	</div>
 
@@ -115,11 +115,11 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 			<div class="group-controls">
 				<input type="number" id="max_content_length" name="max_content_length"
 				       value="<?= htmlspecialchars((string)$maxContentLength, ENT_QUOTES, 'UTF-8') ?>"
-				       min="500" max="16000" step="100"
+				       min="500" step="100"
 				       required="required" />
 				<p class="help-block">
 					<?= _t('ext.feed_digest.max_content_length_help',
-					       'Maximum characters per article content before truncation (500-16000). Helps avoid exceeding LLM context limits. Default 4000 is safe for most models.') ?>
+					       'Maximum characters per article content before truncation (500 or more). Helps avoid exceeding LLM context limits. Default 4000 is safe for most models.') ?>
 				</p>
 			</div>
 		</div>
@@ -152,7 +152,7 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 	<h3><?= _t('ext.feed_digest.category_title', 'Per-Category Configuration') ?></h3>
 	<p>
 		<?= _t('ext.feed_digest.category_help',
-		       'Category summaries create one muted native feed named "<category name> Summary" inside the selected category.') ?>
+		       'Category summaries create one visible native feed named "<category name> Summary" inside the selected category.') ?>
 	</p>
 	<p>
 		<?= _t('ext.feed_digest.category_location',

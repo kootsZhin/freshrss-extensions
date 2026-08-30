@@ -1,6 +1,6 @@
 {
     "name": "Duplicate Remover",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Blocks new duplicate articles and marks existing duplicate articles as read across feeds.",
     "author": "wgding",
     "entrypoint": "DuplicateRemover",

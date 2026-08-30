@@ -151,7 +151,7 @@ class TranslateTitlesExtension extends Minz_Extension {
             error_log("TranslateTitles: Translation failed or unchanged for feed {$feedId}");
         } else {
             error_log("Translated title: " . $translatedTitle);
-            $entry->_title($translatedTitle . ' - ' . $title); // 将翻译后的标题放在前，原文标题放在后
+            $entry->_title($translatedTitle); // 只保留翻译后的标题
         }
         return $entry;
     }

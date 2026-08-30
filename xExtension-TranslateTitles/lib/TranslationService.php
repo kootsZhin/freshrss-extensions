@@ -21,7 +21,7 @@ class TranslationService {
     private function translateWithGoogle($text) {
         // 构建谷歌翻译API的查询参数
         $queryParams = http_build_query([
-            'client' => 'gtx',
+            'client' => 'dict-chrome-ex',
             'sl' => $this->sourceLang,
             'tl' => $this->targetLang,
             'dt' => 't',
@@ -33,8 +33,9 @@ class TranslationService {
         $options = [
             'http' => [
                 'method' => 'GET',
-                'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
-                'timeout' => 5,
+                'header' => "Content-Type: application/x-www-form-urlencoded\r\n" .
+                    "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36\r\n",
+                'timeout' => 10,
             ],
         ];
 

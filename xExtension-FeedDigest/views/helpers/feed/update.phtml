@@ -16,12 +16,26 @@ if (file_exists($core_view)) {
 $core_html = ob_get_clean();
 
 // Build our extension fields
-$batchSize = $this->feed->attributeInt('feed_digest_batch_size') ?: 10;
+$batchSize = $this->feed->attributeInt('feed_digest_batch_size');
+// 0 means unlimited; null means the attribute was never set (legacy default 10).
+if ($batchSize === null || $batchSize < 0) {
+	$batchSize = 10;
+}
 $enabled = $this->feed->attributeBoolean('feed_digest_enabled');
 $markRead = $this->feed->attributeString('feed_digest_mark_read') === '' || $this->feed->attributeBoolean('feed_digest_mark_read');
-$scheduleModes = array_filter(explode(',', $this->feed->attributeString('feed_digest_schedule_modes') ?: 'auto'));
+$scheduleMode = $this->feed->attributeString('feed_digest_schedule_modes') ?: 'auto';
+$scheduleModes = array_filter(explode(',', $scheduleMode));
+// Legacy multi-mode values are normalized to the first selected mode for the dropdown.
+$scheduleMode = $scheduleModes[array_key_first($scheduleModes)] ?? 'auto';
+$scheduleModes = [$scheduleMode];
 $scheduleTimes = $this->feed->attributeString('feed_digest_schedule_times');
 $scheduleInterval = $this->feed->attributeInt('feed_digest_schedule_interval') ?: 24;
+$language = $this->feed->attributeString('feed_digest_language');
+$titlesOnly = $this->feed->attributeBoolean('feed_digest_titles_only');
+$overviewBullets = $this->feed->attributeInt('feed_digest_overview_bullets') ?? 3;
+if ($overviewBullets < 0) {
+	$overviewBullets = 3;
+}
 
 $our_fields = '
 <hr />
@@ -51,18 +65,18 @@ $our_fields = '
 	</div>
 
 	<div class="form-group">
-		<label class="group-name" for="feed_digest_schedule_modes">' . _t('ext.feed_digest.schedule_modes_label', 'Schedule modes') . '</label>
+		<label class="group-name" for="feed_digest_schedule_modes">' . _t('ext.feed_digest.schedule_modes_label', 'Schedule mode') . '</label>
 		<div class="group-controls">
-			<select name="feed_digest_schedule_modes[]" id="feed_digest_schedule_modes" class="w50" multiple="multiple" size="3">
-				<option value="auto"' . (in_array('auto', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_auto', 'Automatic') . '</option>
-				<option value="daily"' . (in_array('daily', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_daily', 'Daily times') . '</option>
-				<option value="interval"' . (in_array('interval', $scheduleModes, true) ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_interval', 'Interval') . '</option>
+			<select name="feed_digest_schedule_modes[]" id="feed_digest_schedule_modes" class="w50" onchange="feedDigestToggleScheduleFields(\'feed\')">
+				<option value="auto"' . ($scheduleMode === 'auto' ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_auto', 'Automatic') . '</option>
+				<option value="daily"' . ($scheduleMode === 'daily' ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_daily', 'Daily times') . '</option>
+				<option value="interval"' . ($scheduleMode === 'interval' ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.schedule_interval', 'Interval') . '</option>
 			</select>
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_modes_help', 'Select one or more modes. Enabled modes are combined; Automatic runs on each maintenance cycle.') . '</p>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_modes_help', 'Choose one schedule mode. Automatic runs on each maintenance cycle; Daily runs at the specified local times.') . '</p>
 		</div>
 	</div>
 
-	<div class="form-group">
+	<div class="form-group feed-digest-schedule-times" data-mode="daily">
 		<label class="group-name" for="feed_digest_schedule_times">' . _t('ext.feed_digest.schedule_times_label', 'Daily times') . '</label>
 		<div class="group-controls">
 			<input type="text" name="feed_digest_schedule_times" id="feed_digest_schedule_times" value="' . htmlspecialchars($scheduleTimes, ENT_QUOTES, 'UTF-8') . '" class="w50" placeholder="06:00, 16:00" />
@@ -70,7 +84,7 @@ $our_fields = '
 		</div>
 	</div>
 
-	<div class="form-group">
+	<div class="form-group feed-digest-schedule-interval" data-mode="interval">
 		<label class="group-name" for="feed_digest_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval hours') . '</label>
 		<div class="group-controls">
 			<input type="number" name="feed_digest_schedule_interval" id="feed_digest_schedule_interval" value="' . $scheduleInterval . '" min="1" max="168" class="w50" />
@@ -82,14 +96,66 @@ $our_fields = '
 		<label class="group-name" for="feed_digest_batch_size">' . _t('ext.feed_digest.batch_size_label', 'Articles per summary batch') . '</label>
 		<div class="group-controls">
 			<input type="number" name="feed_digest_batch_size" id="feed_digest_batch_size"
-			       value="' . $batchSize . '"
-			       min="1" max="50"
+			       value="' . ($batchSize === 0 ? '' : $batchSize) . '"
+			       min="0" step="1"
+			       class="w50" placeholder="0 = unlimited" />
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.batch_size_help', 'Set to 0 for no limit (summarize everything in one run). When set to 1, each article gets a translated copy.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_titles_only">' . _t('ext.feed_digest.titles_only_label', 'Titles only') . '</label>
+		<div class="group-controls">
+			<select name="feed_digest_titles_only" id="feed_digest_titles_only" class="w50">
+				<option value=""' . (!$titlesOnly ? ' selected="selected"' : '') . '>' . _t('gen.short.no') . '</option>
+				<option value="1"' . ($titlesOnly ? ' selected="selected"' : '') . '>' . _t('gen.short.yes') . '</option>
+			</select>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.titles_only_help', 'Instead of per-article summaries, create one digest listing translated titles grouped by feed, with links to the original articles.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_overview_bullets">' . _t('ext.feed_digest.overview_bullets_label', 'Top-level theme bullets') . '</label>
+		<div class="group-controls">
+			<input type="number" name="feed_digest_overview_bullets" id="feed_digest_overview_bullets"
+			       value="' . $overviewBullets . '"
+			       min="0" step="1"
 			       class="w50" />
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.batch_size_help', 'When set to 1, each article gets a translated copy. When greater than 1, a combined summary article is created.') . '</p>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.overview_bullets_help', 'How many key-theme bullet points to list above the digest. 0 disables bullets and keeps only the 2-sentence overview.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_language">' . _t('ext.feed_digest.language_label', 'Summary language') . '</label>
+		<div class="group-controls">
+			<select name="feed_digest_language" id="feed_digest_language" class="w50">
+				<option value=""' . ($language === null || $language === '' ? ' selected="selected"' : '') . '>' . _t('ext.feed_digest.language_global_default', 'Use global default') . '</option>
+				' . implode('', array_map(static function (string $code) use ($language): string {
+					return '<option value="' . htmlspecialchars($code, ENT_QUOTES, 'UTF-8') . '"'
+						. ($language === $code ? ' selected="selected"' : '')
+						. '>' . htmlspecialchars(FeedDigestExtension::SUPPORTED_LANGUAGES[$code], ENT_QUOTES, 'UTF-8') . '</option>';
+				}, array_keys(FeedDigestExtension::SUPPORTED_LANGUAGES))) . '
+			</select>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.language_help', 'Optional language override for this feed. Leave blank to use the global Destination Language.') . '</p>
 		</div>
 	</div>
 
 </fieldset>
+
+<script>
+function feedDigestToggleScheduleFields() {
+	var select = document.getElementById("feed_digest_schedule_modes");
+	if (!select) { return; }
+	var mode = select.value;
+	document.querySelectorAll(".feed-digest-schedule-times").forEach(function(el) {
+		el.style.display = mode === "daily" ? "" : "none";
+	});
+	document.querySelectorAll(".feed-digest-schedule-interval").forEach(function(el) {
+		el.style.display = mode === "interval" ? "" : "none";
+	});
+}
+document.addEventListener("DOMContentLoaded", feedDigestToggleScheduleFields);
+</script>
 ';
 
 // Inject our fields before the form-actions div (which comes before </form>)

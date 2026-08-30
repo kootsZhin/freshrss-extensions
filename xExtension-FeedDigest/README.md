@@ -8,9 +8,10 @@ Automatically summarize newly retrieved RSS articles using LLM APIs (OpenAI-comp
 - 🌍 **Multi-language**: Translates article titles and summaries to your chosen language
 - ⚡ **Efficient Batch Processing**: Summarizes multiple articles in a single API call to reduce costs
 - 📊 **Per-feed Control**: Enable/disable summarization and configure batch size for each feed individually
-- 🕒 **Per-feed Scheduling**: Combine automatic, multiple daily times, and interval-based runs
+- 📑 **Titles-only Digests**: Group translated titles by feed without per-article summaries
+- 🕒 **Per-feed Scheduling**: Choose automatic, daily times, or interval-based runs
 - ✅ **Read-state Control**: Choose whether successfully processed source articles are marked read
-- 🧭 **Feed Overview**: Adds a short high-level overview above each batch's article summaries
+- 🧭 **Feed Overview**: Adds a short high-level overview plus configurable key-theme bullet points above each batch's article summaries
 - 🎯 **Smart Filtering**: Skips image-only and too-short articles, adds explanatory notes
 - 🎨 **Clean Output**: Creates formatted summary articles with links to originals
 
@@ -56,8 +57,9 @@ Required settings:
 - **Destination Language**: Target language for summaries and translations
   - Examples: `English`, `Spanish`, `Simplified Chinese`, `French`, `Japanese`, `German`
   - The LLM will translate titles and write summaries in this language
+  - Feeds and categories can optionally override this with their own summary language
 
-- **Max Content Length**: Maximum characters per article (500-16000)
+- **Max Content Length**: Maximum characters per article (500 or more)
   - Default: 4000
   - Truncates longer articles to avoid LLM context limits
   - Estimate: 1 char ≈ 0.4 tokens
@@ -71,12 +73,17 @@ To enable summarization for a specific feed:
 3. Scroll to the **Feed Digest** section
 4. Configure the following:
    - **Summarize articles with LLM**: Set to **Yes**
-   - **Articles per summary batch**: Number of articles to include in each summary (1-50, default: 10)
-     - Articles are processed in batches to avoid timeouts
+   - **Articles per summary batch**: Number of articles to include in each summary
+     - Set to **0** for no limit: every unread article is summarized in a single run
+     - Set to 1 to create a translated copy per article
+     - Any other value batches articles (e.g. 10 → 10 articles per summary article)
      - Each batch creates one summary article
-     - Example: 35 unread articles with batch size 10 → 3 summary articles (10+10+10), 5 remain unread
+     - Example: 35 unread articles with batch size 10 → 4 summary articles (10+10+10+5), 0 remain unread
+   - **Titles only**: When enabled, no per-article summaries are generated. Instead, one digest is created listing translated titles grouped by feed, with links to the original articles.
+   - **Top-level theme bullets**: How many key-theme bullet points to list above the digest (default: 3; set 0 to disable bullets and keep only the 2-sentence overview)
+   - **Summary language**: Optional per-feed override for the destination language; leave blank to use the global setting
    - **Mark source articles as read**: Controls whether successfully processed source articles are marked read. Failed and skipped articles remain unread.
-   - **Schedule modes**: Select any combination of `Automatic`, `Daily times`, and `Interval`.
+   - **Schedule mode**: Choose one of `Automatic`, `Daily times`, or `Interval`.
      - Automatic runs during every maintenance cycle, as before.
      - Daily times accepts comma-separated local `HH:MM` values, such as `06:00, 16:00`.
      - Interval runs after the configured number of hours since the last successful run.
@@ -116,25 +123,28 @@ Key: sk-or-v1-...
 ## How It Works
 
 1. **Scheduled Updates**: During your regular FreshRSS cron/scheduled feed updates, the extension activates
-2. **Feed Check**: For each feed with summarization enabled, it fetches unread articles (up to 200)
+2. **Feed Check**: For each feed with summarization enabled, it fetches all unread articles
 3. **Article Filtering**:
    - Filters out previously created summary articles
    - Identifies image-only or too-short articles (< 100 characters)
    - Adds explanatory notes to skipped articles (they remain unread for you to review)
-4. **Batch Processing**: Articles are processed in configurable batches (default: 10 per batch)
-   - Only processes batches when enough articles are available
+4. **Batch Processing**: Articles are processed in configurable batches
+   - Batch size **0** processes every unread article in a single run
+   - With a batch size, full batches are processed first, then any remaining unread articles as a final partial batch
    - Each batch is sent to the LLM API in one request for efficiency
    - Each batch succeeds or fails independently
 5. **Summary Creation**: For each batch, a new "summary" article is created with:
-  - A short top-level overview generated from the batch's per-article summaries
+   - A short top-level overview generated from the batch's per-article summaries
+   - Key-theme bullet points (configurable count) listing the most important or recurring themes
    - Translated titles (in your destination language)
    - Concise summaries (2-4 sentences each)
    - Links to original articles
    - Clean HTML formatting
+   - With **Titles only** enabled, the digest instead lists translated titles grouped by source feed, with links to the originals
 6. **Mark as Read**: Only successfully summarized articles are marked as read when enabled for that feed
-7. **Auto-retry**: Failed batches remain unread and will be retried on a later due run
+7. **Auto-retry**: Failed batches remain unread and are retried after a backoff period; HTTP 429 failures wait until the provider's rate-limit reset time
 
-The overview requires one additional LLM request per multi-article batch. If that request fails, no summary article is created and source articles remain unread.
+The overview and theme bullets require one additional LLM request per multi-article batch. If that request fails, no summary article is created and source articles remain unread.
 
 ## PHP Timeout Configuration
 
@@ -158,7 +168,7 @@ fastcgi_read_timeout 300;
 **Estimation**:
 - Each batch of 10 articles takes ~5-15 seconds (API call + processing)
 - Multiple batches are processed sequentially per feed
-- Recommended: 300 seconds (5 minutes) for safety with multiple feeds
+- With an unlimited batch (0), one very large request can take longer; recommended: 300+ seconds (5+ minutes) for safety with multiple feeds
 
 ## Cost Estimation
 
@@ -228,9 +238,9 @@ Actual usage is often lower because many articles are shorter than the configure
 ## Limitations
 
 - **Cron-based**: Summarization happens during scheduled updates, not immediately on manual refresh
-- **Batch Processing**: Articles must accumulate to the configured batch size before processing
+- **Batch Processing**: Articles are grouped into batches up to the configured batch size; a smaller final batch is still processed
 - **Sequential Batches**: Each feed's batches are processed sequentially to avoid timeouts
-- **No Retry Tracking**: Failed batches retry every update (no exponential backoff)
+- **Retry Backoff**: Failed requests are retried after a short backoff, or after the provider's rate-limit reset time when available
 - **Context Limits**: Very long articles are truncated based on max content length setting
 - **Image-only Articles**: Articles with minimal text are skipped and left unread with an explanatory note
 

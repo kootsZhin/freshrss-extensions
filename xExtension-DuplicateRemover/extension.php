@@ -9,8 +9,8 @@ class DuplicateRemoverExtension extends Minz_Extension {
 
     public function init() {
         $this->loadConfiguration();
-        $this->registerHook('entry_before_add', array($this, 'checkDuplicate'));
-        $this->registerHook('freshrss_user_maintenance', array($this, 'cleanDuplicates'));
+        $this->registerHook('entry_before_add', [$this, 'checkDuplicate']);
+        $this->registerHook('freshrss_user_maintenance', [$this, 'cleanDuplicates']);
 
         if ($this->enable_log) {
             error_log('DuplicateRemover: Extension initialized, mode=' . $this->dedupe_mode);
@@ -18,18 +18,24 @@ class DuplicateRemoverExtension extends Minz_Extension {
     }
 
     /**
-     * Load user configuration.
+     * Load user configuration, including older top-level configuration keys.
      */
     private function loadConfiguration() {
         $mode = $this->getUserConfigurationValue('mode');
-        $this->dedupe_mode = in_array($mode, array('title', 'title_link'), true) ? $mode : 'title';
+        if ($mode === null && isset(FreshRSS_Context::$user_conf->DuplicateRemover_mode)) {
+            $mode = FreshRSS_Context::$user_conf->DuplicateRemover_mode;
+        }
+        $this->dedupe_mode = in_array($mode, ['title', 'title_link'], true) ? $mode : 'title';
 
         $log = $this->getUserConfigurationValue('enable_log');
+        if ($log === null && isset(FreshRSS_Context::$user_conf->DuplicateRemover_log)) {
+            $log = FreshRSS_Context::$user_conf->DuplicateRemover_log;
+        }
         $this->enable_log = ($log === true || $log === '1' || $log === 1);
     }
 
     /**
-     * Check whether an entry duplicates one already in the database.
+     * Check whether an entry duplicates an article already present in another feed.
      *
      * Returning null cancels insertion of the new article.
      *
@@ -38,33 +44,53 @@ class DuplicateRemoverExtension extends Minz_Extension {
      */
     public function checkDuplicate($entry) {
         try {
-            $title = $entry->title();
-            if (empty($title)) {
+            if (!($entry instanceof FreshRSS_Entry)) {
+                return $entry;
+            }
+
+            $title = trim($entry->title());
+            if ($title === '') {
                 return $entry;
             }
 
             $link = $entry->link(true);
-            if ($this->dedupe_mode === 'title_link' && empty($link)) {
+            if ($this->dedupe_mode === 'title_link' && $link === '') {
                 return $entry;
             }
 
-            $modelPdo = new Minz_ModelPdo();
+            $feedId = (int)$entry->feedId();
+            $entryDAO = FreshRSS_Factory::createEntryDao();
 
-            if ($this->dedupe_mode === 'title_link') {
-                $sql = 'SELECT 1 FROM `_entry` WHERE title = :title AND link = :link LIMIT 1';
-                $values = array(':title' => $title, ':link' => $link);
-            } else {
-                $sql = 'SELECT 1 FROM `_entry` WHERE title = :title LIMIT 1';
-                $values = array(':title' => $title);
-            }
-
-            $rows = $modelPdo->fetchAssoc($sql, $values);
-            if (!empty($rows)) {
-                if ($this->enable_log) {
-                    $mode_str = $this->dedupe_mode === 'title_link' ? 'title+link' : 'title';
-                    error_log("DuplicateRemover: Skipped duplicate - title: {$title}, mode: {$mode_str}");
+            // FreshRSS buffers new entries in `_entrytmp` during a batch refresh
+            // and only commits them to `_entry` after all feeds have been processed.
+            // Check both tables so a cross-feed duplicate is caught even when both
+            // feeds are refreshed in the same run.
+            foreach (['_entry', '_entrytmp'] as $table) {
+                if ($this->dedupe_mode === 'title_link') {
+                    $sql = 'SELECT 1 FROM `' . $table . '` '
+                        . 'WHERE TRIM(title) = :title AND link = :link AND id_feed <> :id_feed LIMIT 1';
+                    $values = [
+                        ':title' => $title,
+                        ':link' => $link,
+                        ':id_feed' => $feedId,
+                    ];
+                } else {
+                    $sql = 'SELECT 1 FROM `' . $table . '` '
+                        . 'WHERE TRIM(title) = :title AND id_feed <> :id_feed LIMIT 1';
+                    $values = [
+                        ':title' => $title,
+                        ':id_feed' => $feedId,
+                    ];
                 }
-                return null;
+
+                $rows = $entryDAO->fetchAssoc($sql, $values);
+                if (!empty($rows)) {
+                    if ($this->enable_log) {
+                        $mode_str = $this->dedupe_mode === 'title_link' ? 'title+link' : 'title';
+                        error_log("DuplicateRemover: Skipped duplicate - title: {$title}, mode: {$mode_str}");
+                    }
+                    return null;
+                }
             }
         } catch (Exception $e) {
             error_log('DuplicateRemover: Error checking duplicate - ' . $e->getMessage());
@@ -77,19 +103,22 @@ class DuplicateRemoverExtension extends Minz_Extension {
 
     /**
      * Mark duplicate articles that are already in the database as read,
-     * keeping the earliest copy unread.
+     * keeping the earliest copy unread. Only cross-feed duplicate groups are
+     * considered.
      */
     public function cleanDuplicates() {
         try {
-            $modelPdo = new Minz_ModelPdo();
+            $entryDAO = FreshRSS_Factory::createEntryDao();
 
             if ($this->dedupe_mode === 'title_link') {
-                $groups = $modelPdo->fetchAssoc(
-                    'SELECT title, link FROM `_entry` GROUP BY title, link HAVING COUNT(*) > 1'
+                $groups = $entryDAO->fetchAssoc(
+                    'SELECT TRIM(title) AS title, link FROM `_entry` '
+                    . 'GROUP BY TRIM(title), link HAVING COUNT(DISTINCT id_feed) > 1'
                 );
             } else {
-                $groups = $modelPdo->fetchAssoc(
-                    'SELECT title FROM `_entry` GROUP BY title HAVING COUNT(*) > 1'
+                $groups = $entryDAO->fetchAssoc(
+                    'SELECT TRIM(title) AS title FROM `_entry` '
+                    . 'GROUP BY TRIM(title) HAVING COUNT(DISTINCT id_feed) > 1'
                 );
             }
 
@@ -97,24 +126,28 @@ class DuplicateRemoverExtension extends Minz_Extension {
                 return;
             }
 
-            $idsToMarkRead = array();
+            $idsToMarkRead = [];
 
             foreach ($groups as $group) {
-                $title = isset($group['title']) ? $group['title'] : '';
+                $title = isset($group['title']) ? trim((string)$group['title']) : '';
                 if ($title === '') {
                     continue;
                 }
 
                 if ($this->dedupe_mode === 'title_link') {
-                    $link = isset($group['link']) ? $group['link'] : '';
-                    $rows = $modelPdo->fetchAssoc(
-                        'SELECT id FROM `_entry` WHERE title = :title AND link = :link ORDER BY date ASC, id ASC',
-                        array(':title' => $title, ':link' => $link)
+                    $link = isset($group['link']) ? (string)$group['link'] : '';
+                    $rows = $entryDAO->fetchAssoc(
+                        'SELECT id FROM `_entry` '
+                        . 'WHERE TRIM(title) = :title AND link = :link ORDER BY date ASC, id ASC',
+                        [
+                            ':title' => $title,
+                            ':link' => $link,
+                        ]
                     );
                 } else {
-                    $rows = $modelPdo->fetchAssoc(
-                        'SELECT id FROM `_entry` WHERE title = :title ORDER BY date ASC, id ASC',
-                        array(':title' => $title)
+                    $rows = $entryDAO->fetchAssoc(
+                        'SELECT id FROM `_entry` WHERE TRIM(title) = :title ORDER BY date ASC, id ASC',
+                        [':title' => $title]
                     );
                 }
 
@@ -122,10 +155,10 @@ class DuplicateRemoverExtension extends Minz_Extension {
                     continue;
                 }
 
-                $ids = array();
+                $ids = [];
                 foreach ($rows as $row) {
                     if (!empty($row['id'])) {
-                        $ids[] = $row['id'];
+                        $ids[] = (string)$row['id'];
                     }
                 }
 
@@ -138,7 +171,6 @@ class DuplicateRemoverExtension extends Minz_Extension {
             }
 
             if (!empty($idsToMarkRead)) {
-                $entryDAO = FreshRSS_Factory::createEntryDao();
                 $entryDAO->markRead($idsToMarkRead, true);
 
                 if ($this->enable_log) {
@@ -155,16 +187,16 @@ class DuplicateRemoverExtension extends Minz_Extension {
     public function handleConfigureAction() {
         if (Minz_Request::isPost()) {
             $mode = Minz_Request::param('dedupe_mode', 'title');
-            if (!in_array($mode, array('title', 'title_link'), true)) {
+            if (!in_array($mode, ['title', 'title_link'], true)) {
                 $mode = 'title';
             }
 
             $this->dedupe_mode = $mode;
             $this->enable_log = Minz_Request::param('enable_log', '') === '1';
-            $this->setUserConfiguration(array(
+            $this->setUserConfiguration([
                 'mode' => $mode,
                 'enable_log' => $this->enable_log,
-            ));
+            ]);
         }
     }
 
@@ -172,6 +204,6 @@ class DuplicateRemoverExtension extends Minz_Extension {
      * Remove extension configuration.
      */
     public function handleUninstallAction() {
-        $this->setUserConfiguration(array());
+        $this->removeUserConfiguration();
     }
 }

@@ -51,11 +51,12 @@ if (isset(FreshRSS_Context::$user_conf->DuplicateRemover_log) && !$enable_log) {
         <label class="group-name">What it does:</label>
         <div class="group-controls">
             <ul style="margin: 10px 0; padding-left: 20px;">
-                <li>Detects duplicate articles across feeds</li>
+                <li>Detects duplicate articles across different feeds</li>
                 <li>Blocks new duplicate articles from being inserted</li>
-                <li>Marks existing newer duplicate copies as read</li>
+                <li>Marks existing newer cross-feed duplicate copies as read</li>
                 <li>Keeps the earliest copy of each duplicate group unread</li>
-                <li>Complements FreshRSS's built-in same-title-in-feed option</li>
+                <li>Does not delete existing articles; it makes duplicates read</li>
+                <li>Runs automatically during feed refreshes / user maintenance</li>
             </ul>
         </div>
     </div>
