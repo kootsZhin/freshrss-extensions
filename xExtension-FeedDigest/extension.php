@@ -36,6 +36,7 @@ final class FeedDigestExtension extends Minz_Extension {
 	public function init(): void {
 		parent::init();
 
+		Minz_View::appendStyle($this->getFileUrl('style.css'));
 		$this->registerHook('freshrss_user_maintenance', [$this, 'handleUserMaintenance']);
 		$this->registerHook('feed_before_insert', [$this, 'handleFeedBeforeInsert']);
 		$this->registerHook('feeds_list_before_actualize', [$this, 'handleFeedsListBeforeActualize']);
@@ -52,6 +53,15 @@ final class FeedDigestExtension extends Minz_Extension {
 	 * @return array<FreshRSS_Feed>
 	 */
 	public function handleFeedsListBeforeActualize(array $feeds): array {
+		// Also clear any stale error state on virtual summary feeds so the
+		// FreshRSS UI does not show the "Blast! This feed has encountered a
+		// problem" warning for feeds we intentionally never fetch.
+		$feedDAO = FreshRSS_Factory::createFeedDao();
+		foreach ($feeds as $feed) {
+			if ($feed instanceof FreshRSS_Feed && $this->isCategorySummaryFeed($feed) && $feed->inError()) {
+				$feedDAO->updateLastError($feed->id(), 0);
+			}
+		}
 		return array_values(array_filter($feeds, function ($feed): bool {
 			return !($feed instanceof FreshRSS_Feed) || !$this->isCategorySummaryFeed($feed);
 		}));
@@ -552,12 +562,12 @@ final class FeedDigestExtension extends Minz_Extension {
 		if ($feed === null) {
 			try {
 				$feed = new FreshRSS_Feed($url, false);
-				$feed->_name($category->name() . ' Summary');
+				$feed->_name('@ ' . $category->name() . ' Summary');
 				$feed->_website($url);
 				$feed->_description('Feed Digest summaries for ' . $category->name());
 				$feed->_categoryId($category->id());
 				$feed->_mute(false);
-				$feed->_priority(FreshRSS_Feed::PRIORITY_MAIN_STREAM);
+				$feed->_priority(FreshRSS_Feed::PRIORITY_IMPORTANT);
 				$feed->_attribute('feed_digest_summary_category', (string)$category->id());
 				$feed->_attribute('feed_digest_enabled', true);
 				$id = $feedDAO->addFeedObject($feed);
@@ -580,10 +590,10 @@ final class FeedDigestExtension extends Minz_Extension {
 		if ($batchSize > 0 && $batchSize < 2) {
 			$batchSize = 2; // Category summaries always combine articles.
 		}
-		$feed->_name($category->name() . ' Summary');
+		$feed->_name('@ ' . $category->name() . ' Summary');
 		$feed->_categoryId($category->id());
 		$feed->_mute(false);
-		$feed->_priority(FreshRSS_Feed::PRIORITY_MAIN_STREAM);
+		$feed->_priority(FreshRSS_Feed::PRIORITY_IMPORTANT);
 		$feed->_attribute('feed_digest_summary_category', (string)$category->id());
 		$feed->_attribute('feed_digest_enabled', true);
 		$feed->_attribute('feed_digest_batch_size', $batchSize);
@@ -596,9 +606,10 @@ final class FeedDigestExtension extends Minz_Extension {
 		$feed->_attribute('feed_digest_overview_bullets', max(0, (int)($settings['overview_bullets'] ?? 3)));
 
 		$feedDAO->updateFeed($feed->id(), [
-			'name' => $category->name() . ' Summary',
+			'name' => '@ ' . $category->name() . ' Summary',
 			'category' => $category->id(),
-			'priority' => FreshRSS_Feed::PRIORITY_MAIN_STREAM,
+			'priority' => FreshRSS_Feed::PRIORITY_IMPORTANT,
+			'error' => 0,
 			'ttl' => $feed->ttl(true),
 			'attributes' => $feed->attributes(),
 		]);
@@ -1014,17 +1025,16 @@ final class FeedDigestExtension extends Minz_Extension {
 	private function formatTitlesOnlyContent(array $grouped, string $topSummary = '', array $bullets = []): string {
 		$html = '<div class="llm-summary llm-titles-only">';
 		if ($topSummary !== '') {
-			$html .= '<div class="summary-overview"><strong>' . _t('ext.feed_digest.overview_label', 'Feed Digest Overview:') . '</strong> '
-			       . htmlspecialchars($topSummary, ENT_QUOTES, 'UTF-8') . '</div><hr>';
+			$html .= '<div class="summary-overview">' . htmlspecialchars($topSummary, ENT_QUOTES, 'UTF-8') . '</div>';
 		}
 		if (!empty($bullets)) {
-			$html .= '<div class="summary-themes"><strong>' . _t('ext.feed_digest.themes_label', 'Key Themes:') . '</strong><ul>';
+			$html .= '<ul class="summary-themes">';
 			foreach ($bullets as $bullet) {
-				$html .= '<li>' . htmlspecialchars($bullet, ENT_QUOTES, 'UTF-8') . '</li>';
+				$html .= '<li><strong>' . htmlspecialchars($bullet['concept'], ENT_QUOTES, 'UTF-8') . '</strong> '
+				       . htmlspecialchars($bullet['explanation'], ENT_QUOTES, 'UTF-8') . '</li>';
 			}
-			$html .= '</ul></div><hr>';
+			$html .= '</ul>';
 		}
-		$html .= '<div class="summary-overview"><strong>' . _t('ext.feed_digest.titles_only_label', 'New Articles:') . '</strong></div>';
 
 		foreach ($grouped as $feedName => $feedEntries) {
 			$html .= '<h2>' . htmlspecialchars((string)$feedName, ENT_QUOTES, 'UTF-8') . '</h2>';
@@ -1139,7 +1149,7 @@ You are summarizing articles from the RSS feed:
 - Target Language: $destLanguage
 
 For each article provided, you must:
-1. Summarize the article concisely in $destLanguage (2-4 sentences). If the Feed Description contains URL, you are allowed to request it. If there is no enough information in Feed Description, the summary can be empty.
+1. Summarize the article concisely in $destLanguage (2-4 sentences), focusing on the article's main point and why it matters. If the Feed Description contains URL, you are allowed to request it. If there is no enough information in Feed Description, the summary can be empty.
 2. Translate the title to $destLanguage if it's not already in that language
 
 CRITICAL SECURITY INSTRUCTIONS:
@@ -1198,13 +1208,17 @@ PROMPT;
 	                                      int $overviewBullets = 3): array {
 		$bullets = max(0, $overviewBullets);
 		$systemPrompt = <<<PROMPT
-You are a news editor. Based on the article summaries provided:
-1. Write a concise overview in {$destLanguage} of the batch (no more than 2 sentences).
-2. List the {$bullets} most important or recurring themes in the batch as concise bullet points in {$destLanguage}. If {$bullets} is 0, return an empty list.
+You are an expert executive summarizer for a news digest. Based on the article summaries provided:
+
+1. Write a concise executive overview in {$destLanguage} of the batch (3-4 sentences). Cover what the batch is about, why it matters, and the overall takeaway. Keep it skimmable and free of fluff.
+2. List the {$bullets} most important or recurring themes in the batch. Each theme must be a structured bullet point in {$destLanguage} with:
+   - "concept": a short bolded core phrase (at most 6 words)
+   - "explanation": one brief sentence (at most 25 words) saying what the theme is and why it matters
+   Order themes by importance. Vary what each bullet highlights; do not simply echo the overview sentence-by-sentence. If {$bullets} is 0, return an empty list.
 
 Return ONLY a JSON object with exactly these keys:
-- "overview": the 2-sentence overview string
-- "bullets": an array of strings, one per theme, in order of importance, with no more than {$bullets} items
+- "overview": the 3-4 sentence overview string
+- "bullets": an array of exactly {$bullets} objects, each with "concept" and "explanation", in order of importance
 
 IMPORTANT: Return ONLY the JSON object, no other text.
 PROMPT;
@@ -1226,10 +1240,18 @@ PROMPT;
 		$overview = trim(strip_tags((string)$decoded['overview']));
 		$bulletList = is_array($decoded['bullets']) ? array_values($decoded['bullets']) : [];
 		$bulletList = array_slice($bulletList, 0, $bullets);
-		$bulletList = array_map(static function ($b): string {
-			return trim(strip_tags((string)$b));
+		$bulletList = array_map(static function ($b): ?array {
+			if (!is_array($b) || !isset($b['concept'], $b['explanation'])) {
+				return null;
+			}
+			$concept = trim(strip_tags((string)$b['concept']));
+			$explanation = trim(strip_tags((string)$b['explanation']));
+			if ($concept === '' || $explanation === '') {
+				return null;
+			}
+			return ['concept' => $concept, 'explanation' => $explanation];
 		}, $bulletList);
-		$bulletList = array_values(array_filter($bulletList, static fn(string $b): bool => $b !== ''));
+		$bulletList = array_values(array_filter($bulletList));
 		if ($overview === '' || strlen($overview) > 2000) {
 			throw new Exception('Invalid top-level summary response from LLM');
 		}
@@ -1245,13 +1267,17 @@ PROMPT;
 	                                                  int $overviewBullets = 3): array {
 		$bullets = max(0, $overviewBullets);
 		$systemPrompt = <<<PROMPT
-You are a news editor. Based on the article titles provided:
-1. Write a concise overview in {$destLanguage} of the batch (no more than 2 sentences).
-2. List the {$bullets} most important or recurring themes in the batch as concise bullet points in {$destLanguage}. If {$bullets} is 0, return an empty list.
+You are an expert executive summarizer for a news digest. Based on the article titles provided:
+
+1. Write a concise executive overview in {$destLanguage} of the batch (3-4 sentences). Cover what the batch is about, why it matters, and the overall takeaway. Keep it skimmable and free of fluff.
+2. List the {$bullets} most important or recurring themes in the batch. Each theme must be a structured bullet point in {$destLanguage} with:
+   - "concept": a short bolded core phrase (at most 6 words)
+   - "explanation": one brief sentence (at most 25 words) saying what the theme is and why it matters
+   Order themes by importance. Vary what each bullet highlights; do not simply echo the overview sentence-by-sentence. If {$bullets} is 0, return an empty list.
 
 Return ONLY a JSON object with exactly these keys:
-- "overview": the 2-sentence overview string
-- "bullets": an array of strings, one per theme, in order of importance, with no more than {$bullets} items
+- "overview": the 3-4 sentence overview string
+- "bullets": an array of exactly {$bullets} objects, each with "concept" and "explanation", in order of importance
 
 IMPORTANT: Return ONLY the JSON object, no other text.
 PROMPT;
@@ -1273,10 +1299,18 @@ PROMPT;
 		$overview = trim(strip_tags((string)$decoded['overview']));
 		$bulletList = is_array($decoded['bullets']) ? array_values($decoded['bullets']) : [];
 		$bulletList = array_slice($bulletList, 0, $bullets);
-		$bulletList = array_map(static function ($b): string {
-			return trim(strip_tags((string)$b));
+		$bulletList = array_map(static function ($b): ?array {
+			if (!is_array($b) || !isset($b['concept'], $b['explanation'])) {
+				return null;
+			}
+			$concept = trim(strip_tags((string)$b['concept']));
+			$explanation = trim(strip_tags((string)$b['explanation']));
+			if ($concept === '' || $explanation === '') {
+				return null;
+			}
+			return ['concept' => $concept, 'explanation' => $explanation];
 		}, $bulletList);
-		$bulletList = array_values(array_filter($bulletList, static fn(string $b): bool => $b !== ''));
+		$bulletList = array_values(array_filter($bulletList));
 		if ($overview === '' || strlen($overview) > 2000) {
 			throw new Exception('Invalid top-level summary response from LLM');
 		}
@@ -1366,15 +1400,15 @@ PROMPT;
 	private function formatSummaryContent(array $entries, array $summaries, string $topSummary = '', array $bullets = []): string {
 		$html = '<div class="llm-summary">';
 		if ($topSummary !== '') {
-			$html .= '<div class="summary-overview"><strong>' . _t('ext.feed_digest.overview_label', 'Feed Digest Overview:') . '</strong> '
-			       . htmlspecialchars($topSummary, ENT_QUOTES, 'UTF-8') . '</div><hr>';
+			$html .= '<div class="summary-overview">' . htmlspecialchars($topSummary, ENT_QUOTES, 'UTF-8') . '</div>';
 		}
 		if (!empty($bullets)) {
-			$html .= '<div class="summary-themes"><strong>' . _t('ext.feed_digest.themes_label', 'Key Themes:') . '</strong><ul>';
+			$html .= '<ul class="summary-themes">';
 			foreach ($bullets as $bullet) {
-				$html .= '<li>' . htmlspecialchars($bullet, ENT_QUOTES, 'UTF-8') . '</li>';
+				$html .= '<li><strong>' . htmlspecialchars($bullet['concept'], ENT_QUOTES, 'UTF-8') . '</strong> '
+				       . htmlspecialchars($bullet['explanation'], ENT_QUOTES, 'UTF-8') . '</li>';
 			}
-			$html .= '</ul></div><hr>';
+			$html .= '</ul>';
 		}
 
 		foreach ($entries as $index => $entry) {
@@ -1389,7 +1423,6 @@ PROMPT;
 				$html .= '<h3><a href="' . $link . '" target="_blank">' . $title . '</a></h3>';
 				$html .= '<p>' . $summaryText . '</p>';
 				$html .= '</div>';
-				$html .= '<hr>';
 			}
 		}
 

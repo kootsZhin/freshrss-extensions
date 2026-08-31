@@ -74,15 +74,13 @@ return [
 		'schedule_times_help' => 'Comma-separated local times in HH:MM format. Uses the FreshRSS/PHP timezone.',
 		'schedule_interval_label' => 'Interval hours',
 		'schedule_interval_help' => 'Run after this many hours since the last successful scheduled run.',
-		'overview_label' => 'Feed Digest Overview:',
-		'themes_label' => 'Key Themes:',
 
 		// How it works
 		'how_it_works_title' => 'How It Works',
 		'how_step1' => 'During maintenance, the extension checks each enabled feed when its selected schedule mode is due.',
 		'how_step2' => 'Unread articles are collected according to each feed\'s schedule and sent to the LLM API in batches.',
 		'how_step3' => 'The LLM summarizes each article and translates titles to your destination language.',
-		'how_step4' => 'A second LLM call creates a short overview and key-theme bullet points above the per-article summaries.',
+		'how_step4' => 'A second LLM call creates an executive overview and key-theme bullet points above the per-article summaries.',
 		'how_step5' => 'Original articles are marked as read only when that feed option is enabled.',
 		'how_step6' => 'If any errors occur, articles remain unread and will be retried on the next update.',
 	],
