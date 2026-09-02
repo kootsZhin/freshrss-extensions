@@ -5,13 +5,13 @@ Automatically summarize newly retrieved RSS articles using LLM APIs (OpenAI-comp
 ## Features
 
 - 🤖 **Automatic Summarization**: Processes unread articles using LLM APIs during scheduled feed updates
-- 🌍 **Multi-language**: Translates article titles and summaries to your chosen language
+- 🌍 **Multi-language**: Writes summaries and digests in your chosen language while keeping original titles
 - ⚡ **Efficient Batch Processing**: Summarizes multiple articles in a single API call to reduce costs
 - 📊 **Per-feed Control**: Enable/disable summarization and configure batch size for each feed individually
-- 📑 **Titles-only Digests**: Group translated titles by feed without per-article summaries
+- 📑 **Titles-only Digests**: Group original titles by feed without per-article summaries
 - 🕒 **Per-feed Scheduling**: Choose automatic, daily times, or interval-based runs
 - ✅ **Read-state Control**: Choose whether successfully processed source articles are marked read
-- 🧭 **Feed Overview**: Adds a short high-level overview plus configurable key-theme bullet points above each batch's article summaries
+- 🧭 **Feed Overview**: Adds a batch theme, a short high-level overview, and configurable key-theme bullet points above each batch's article summaries
 - 🎯 **Smart Filtering**: Skips image-only and too-short articles, adds explanatory notes
 - 🎨 **Clean Output**: Creates formatted summary articles with links to originals
 
@@ -56,8 +56,10 @@ Required settings:
 
 - **Destination Language**: Target language for summaries and translations
   - Examples: `English`, `Spanish`, `Simplified Chinese`, `French`, `Japanese`, `German`
-  - The LLM will translate titles and write summaries in this language
+  - The LLM writes summaries in this language; article titles are kept as-is
   - Feeds and categories can optionally override this with their own summary language
+
+- **Secondary Language** *(optional)*: Second language shown as a separate muted paragraph below the primary language for the theme and TL;DR lines. Disabled by default; feeds and categories can optionally override the global choice.
 
 - **Max Content Length**: Maximum characters per article (500 or more)
   - Default: 4000
@@ -73,19 +75,21 @@ To enable summarization for a specific feed:
 3. Scroll to the **Feed Digest** section
 4. Configure the following:
    - **Summarize articles with LLM**: Set to **Yes**
-   - **Articles per summary batch**: Number of articles to include in each summary
+   - **Articles per summary batch**: Number of articles to include in each summary (default: 0 = unlimited)
      - Set to **0** for no limit: every unread article is summarized in a single run
      - Set to 1 to create a translated copy per article
      - Any other value batches articles (e.g. 10 → 10 articles per summary article)
      - Each batch creates one summary article
      - Example: 35 unread articles with batch size 10 → 4 summary articles (10+10+10+5), 0 remain unread
-   - **Titles only**: When enabled, no per-article summaries are generated. Instead, one digest is created listing translated titles grouped by feed, with links to the original articles.
-   - **Top-level theme bullets**: How many key-theme bullet points to list above the digest (default: 3; set 0 to disable bullets and keep only the 2-sentence overview)
+   - **Titles only**: When enabled (default), no per-article summaries are generated. Instead, one digest is created listing the original titles (each labeled with its source feed), with links to the original articles. Titles are not translated, which saves one LLM call per digest.
+   - **Full summary mode**: Per-article summaries are written in the destination language, but original titles are kept as-is, which saves one LLM call per digest.
+   - **Top-level theme bullets**: How many key-theme bullet points to list below the TL;DR (default: 3; set 0 to disable bullets and keep only the overview)
    - **Summary language**: Optional per-feed override for the destination language; leave blank to use the global setting
+   - **Secondary language**: Optional per-feed override for the global secondary-language setting; leave Disabled to use the global default
    - **Mark source articles as read**: Controls whether successfully processed source articles are marked read. Failed and skipped articles remain unread.
    - **Schedule mode**: Choose one of `Automatic`, `Daily times`, or `Interval`.
      - Automatic runs during every maintenance cycle, as before.
-     - Daily times accepts comma-separated local `HH:MM` values, such as `06:00, 16:00`.
+     - Daily times accepts comma-separated local `HH:MM` values (default `06:00, 11:00, 17:00, 21:00`).
      - Interval runs after the configured number of hours since the last successful run.
      - Daily times use the timezone configured for the FreshRSS/PHP runtime.
 5. Click **Submit**
@@ -134,17 +138,19 @@ Key: sk-or-v1-...
    - Each batch is sent to the LLM API in one request for efficiency
    - Each batch succeeds or fails independently
 5. **Summary Creation**: For each batch, a new "summary" article is created with:
-   - A short top-level overview generated from the batch's per-article summaries
-   - Key-theme bullet points (configurable count) listing the most important or recurring themes
-   - Translated titles (in your destination language)
+   - One natural, headline-style theme sentence for the whole batch (shown above the TL;DR, separated by a divider)
+   - A detailed plain-text TL;DR overview generated from the batch's per-article summaries (or titles in titles-only mode)
+   - Key-theme bullet points (configurable count, primary language only) listing the most important or recurring themes, each followed by its linked source feed where available
+   - Article titles grouped under one source-feed header per feed (single articles keep a compact feed label)
+   - Original article titles (not translated)
    - Concise summaries (2-4 sentences each)
    - Links to original articles
-   - Clean HTML formatting
-   - With **Titles only** enabled, the digest instead lists translated titles grouped by source feed, with links to the originals
+   - Clean, compact, box-free formatting shared by both digest modes
+   - With **Titles only** enabled (default), the digest instead lists original titles with source-feed labels, with links to the originals
 6. **Mark as Read**: Only successfully summarized articles are marked as read when enabled for that feed
 7. **Auto-retry**: Failed batches remain unread and are retried after a backoff period; HTTP 429 failures wait until the provider's rate-limit reset time
 
-The overview and theme bullets require one additional LLM request per multi-article batch. If that request fails, no summary article is created and source articles remain unread.
+The TL;DR, theme bullets, and batch theme line are produced by one LLM request per multi-article batch. If the theme field is missing from that response, the digest is still created without the theme line; if the TL;DR fails, no summary article is created and source articles remain unread.
 
 ## PHP Timeout Configuration
 
@@ -175,7 +181,7 @@ fastcgi_read_timeout 300;
 API costs vary by provider, model, tokenization, and response length. The estimates below use standard list prices as of August 2026 and assume a typical batch of 10 articles at the default maximum of 4,000 characters each:
 
 - Approximately 40,000 input characters, estimated as 16,000 input tokens
-- Approximately 1,000 output tokens for 10 translated titles and summaries
+- Approximately 800 output tokens for 10 summaries plus the theme, TL;DR, and bullets
 
 | Model | Input / 1M tokens | Output / 1M tokens | Estimated cost per batch |
 | --- | ---: | ---: | ---: |

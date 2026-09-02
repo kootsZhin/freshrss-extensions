@@ -1,36 +1,73 @@
+/* Unified minimalist digest styling shared by full-summary and titles-only modes. */
 .llm-summary {
-	padding: 8px 0;
-}
-
-.summary-overview {
-	font-size: 1.05em;
-	line-height: 1.6;
-	padding: 12px 16px;
-	margin: 0 0 14px;
-	border-left: 4px solid var(--frss-color-main, #2196F3);
-	border-radius: 4px;
-	background-color: var(--frss-background-color, #f7f9fc);
-}
-
-.summary-themes {
-	list-style: none;
-	margin: 0 0 16px;
+	margin: 0;
 	padding: 0;
 }
 
-.summary-themes li {
-	padding: 8px 10px;
-	margin: 0 0 6px;
-	border-radius: 4px;
-	background-color: var(--frss-background-color, #f7f9fc);
+/* One-sentence theme for the whole batch, shown above the TL;DR.
+   Visually distinct: small caps, muted color, separated by a rule below. */
+.digest-theme {
+	margin: 0 0 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
+	line-height: 1.55;
 }
 
-.summary-themes li strong {
+.digest-theme-label {
+	font-size: 0.78em;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	opacity: 0.6;
+	margin-right: 6px;
+}
+
+.digest-theme-text {
+	font-weight: 600;
+	opacity: 0.9;
+}
+
+/* TL;DR block: plain text, no box, no border, no background. */
+.digest-tldr {
+	margin: 0 0 10px;
+	line-height: 1.6;
+}
+
+.digest-tldr-label {
+	font-weight: 600;
+}
+
+/* Secondary-language text: separate paragraph below the primary text, muted. */
+.digest-secondary {
+	display: block;
+	margin: 6px 0 0;
+	opacity: 0.65;
+}
+
+/* Key-theme bullet list: plain markers, tight spacing. */
+.digest-bullets {
+	margin: 0 0 12px;
+	padding-left: 22px;
+}
+
+.digest-bullets li {
+	margin: 0 0 4px;
+	line-height: 1.5;
+}
+
+.digest-bullets li strong {
 	margin-right: 4px;
 }
 
+.bullet-feed {
+	font-size: 0.85em;
+	opacity: 0.7;
+	white-space: nowrap;
+}
+
+/* Per-article items: compact, separator line only. */
 .summary-item {
-	padding: 12px 0;
+	padding: 10px 0 8px;
 	margin: 0 0 4px;
 	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
 }
@@ -39,22 +76,54 @@
 	border-bottom: none;
 }
 
+.item-feed {
+	display: block;
+	font-size: 0.82em;
+	opacity: 0.7;
+	margin-bottom: 2px;
+}
+
+/* Multiple articles from the same feed: one header, then a compact list. */
+.summary-group {
+	margin: 0 0 4px;
+	padding: 8px 0 6px;
+	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
+}
+
+.summary-group:last-child {
+	border-bottom: none;
+}
+
+.group-feed {
+	margin: 0 0 4px;
+	font-size: 0.82em;
+	opacity: 0.7;
+	font-weight: 600;
+}
+
+.group-items {
+	margin: 0;
+	padding-left: 18px;
+}
+
+.group-items li {
+	margin: 0 0 5px;
+	line-height: 1.45;
+}
+
+.group-items li p {
+	margin: 2px 0 0;
+	line-height: 1.5;
+	opacity: 0.9;
+}
+
 .summary-item h3 {
-	margin: 0 0 6px;
-	font-size: 1.1em;
+	margin: 0 0 4px;
+	font-size: 1.05em;
+	line-height: 1.35;
 }
 
 .summary-item p {
 	margin: 0;
-	line-height: 1.6;
-}
-
-.llm-titles-only h2 {
-	font-size: 1.05em;
-	margin: 14px 0 6px;
-}
-
-.llm-titles-only ul {
-	margin: 0 0 12px;
-	padding-left: 20px;
+	line-height: 1.55;
 }
