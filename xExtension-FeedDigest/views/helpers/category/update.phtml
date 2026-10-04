@@ -12,6 +12,7 @@ $categorySettings = $extension === null ? [] : $extension->getCategorySettings()
 $settings = $categorySettings[(string)$category->id()] ?? [];
 
 $enabled = !empty($settings['enabled']);
+$hideFromMainStream = !empty($settings['hide_from_main_stream']);
 $markRead = !isset($settings['mark_read']) || (bool)$settings['mark_read'];
 $batchSize = (int)($settings['batch_size'] ?? 0);
 if ($batchSize > 0 && $batchSize < 2) {
@@ -23,7 +24,7 @@ $scheduleModes = array_filter(explode(',', $scheduleMode));
 $scheduleMode = $scheduleModes[array_key_first($scheduleModes)] ?? 'auto';
 $scheduleModes = [$scheduleMode];
 $scheduleTimes = (string)($settings['schedule_times'] ?? '06:00,11:00,17:00,21:00');
-$scheduleInterval = (int)($settings['schedule_interval'] ?? 24);
+$scheduleInterval = (int)($settings['schedule_interval'] ?? 60);
 $language = (string)($settings['language'] ?? '');
 $secondaryLanguage = (string)($settings['secondary_language'] ?? '');
 $titlesOnly = !array_key_exists('titles_only', $settings) || !empty($settings['titles_only']);
@@ -51,7 +52,18 @@ $fields = '
 				<option value=""' . (!$enabled ? ' selected="selected"' : '') . '>' . _t('gen.short.no') . '</option>
 				<option value="1"' . ($enabled ? ' selected="selected"' : '') . '>' . _t('gen.short.yes') . '</option>
 			</select>
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.category_setting_help', 'Create a visible native feed containing summaries from all feeds in this category.') . '</p>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.category_setting_help', 'Create a visible native feed containing summaries from all feeds in this category. The summary feed is placed in the shared "Digests" category so external readers can group all digests together.') . '</p>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="feed_digest_category_hide_from_main_stream">' . _t('ext.feed_digest.category_hide_from_main_stream_label', 'Hide source feeds from Main stream') . '</label>
+		<div class="group-controls">
+			<select name="feed_digest_category_hide_from_main_stream" id="feed_digest_category_hide_from_main_stream" class="w50">
+				<option value=""' . (!$hideFromMainStream ? ' selected="selected"' : '') . '>' . _t('gen.short.no') . '</option>
+				<option value="1"' . ($hideFromMainStream ? ' selected="selected"' : '') . '>' . _t('gen.short.yes') . '</option>
+			</select>
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.category_hide_from_main_stream_help', 'Keep this category\'s feeds visible only inside the category (and their own feed page) instead of also showing them in Main stream / All.') . '</p>
 		</div>
 	</div>
 
@@ -87,10 +99,10 @@ $fields = '
 	</div>
 
 	<div class="form-group feed-digest-category-schedule-interval" data-mode="interval">
-		<label class="group-name" for="feed_digest_category_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval hours') . '</label>
+		<label class="group-name" for="feed_digest_category_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval minutes') . '</label>
 		<div class="group-controls">
-			<input type="number" name="feed_digest_category_schedule_interval" id="feed_digest_category_schedule_interval" value="' . $scheduleInterval . '" min="1" max="168" class="w50" />
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_interval_help', 'Run after this many hours since the last successful scheduled run.') . '</p>
+			<input type="number" name="feed_digest_category_schedule_interval" id="feed_digest_category_schedule_interval" value="' . $scheduleInterval . '" min="1" max="10080" class="w50" />
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_interval_help', 'Run after this many minutes since the last successful scheduled run (default 60 = 1 hour).') . '</p>
 		</div>
 	</div>
 

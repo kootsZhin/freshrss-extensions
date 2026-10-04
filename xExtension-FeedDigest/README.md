@@ -12,7 +12,9 @@ Automatically summarize newly retrieved RSS articles using LLM APIs (OpenAI-comp
 - 🕒 **Per-feed Scheduling**: Choose automatic, daily times, or interval-based runs
 - ✅ **Read-state Control**: Choose whether successfully processed source articles are marked read
 - 🧭 **Feed Overview**: Adds a batch theme, a short high-level overview, and configurable key-theme bullet points above each batch's article summaries
-- 🎯 **Smart Filtering**: Skips image-only and too-short articles, adds explanatory notes
+- 🚫 **Per-category Main stream visibility**: Hide an entire category's source feeds from the Main stream / All view while they remain accessible inside the category and through its `@ Category Summary` feed
+- 🗂️ **Shared Digests category**: Every category summary feed lives in one **Digests** category, so external readers (Reeder, and other Google Reader clients) can show all digests in a single folder
+- 🎯 **Smart Filtering**: Summarizes short articles too, skipping only image-only posts with no text
 - 🎨 **Clean Output**: Creates formatted summary articles with links to originals
 
 ## Requirements
@@ -61,8 +63,9 @@ Required settings:
 
 - **Secondary Language** *(optional)*: Second language shown as a separate muted paragraph below the primary language for the theme and TL;DR lines. Disabled by default; feeds and categories can optionally override the global choice.
 
-- **Max Content Length**: Maximum characters per article (500 or more)
+- **Max Content Length**: Maximum visible article-text characters per article (500 or more)
   - Default: 4000
+  - HTML markup, image/tracking boilerplate, and newsletter padding do not count toward the limit, so this measures what the model actually receives
   - Truncates longer articles to avoid LLM context limits
   - Estimate: 1 char ≈ 0.4 tokens
 
@@ -79,8 +82,9 @@ To enable summarization for a specific feed:
      - Set to **0** for no limit: every unread article is summarized in a single run
      - Set to 1 to create a translated copy per article
      - Any other value batches articles (e.g. 10 → 10 articles per summary article)
-     - Each batch creates one summary article
-     - Example: 35 unread articles with batch size 10 → 4 summary articles (10+10+10+5), 0 remain unread
+     - Each run writes a new summary entry. While a summary is still **unread**, every article it lists is carried into the new summary and the old one is marked read, so you never face a backlog of pending summaries and the summary you read keeps the articles it had. Once you read a summary, the next run starts a fresh digest with only new articles. Carrying items over does not depend on whether the individual source articles are already read, and carried per-article summaries are reused as-is (no extra LLM cost)
+     - Each line starts with the article's publish time as `HH:MM`, and articles are listed newest first within each source-feed group
+     - Example: 35 unread articles with batch size 10 → 4 batches summarized in one run, combined into 1 pending digest, 0 remain unread
    - **Titles only**: When enabled (default), no per-article summaries are generated. Instead, one digest is created listing the original titles (each labeled with its source feed), with links to the original articles. Titles are not translated, which saves one LLM call per digest.
    - **Full summary mode**: Per-article summaries are written in the destination language, but original titles are kept as-is, which saves one LLM call per digest.
    - **Top-level theme bullets**: How many key-theme bullet points to list below the TL;DR (default: 3; set 0 to disable bullets and keep only the overview)
@@ -90,9 +94,36 @@ To enable summarization for a specific feed:
    - **Schedule mode**: Choose one of `Automatic`, `Daily times`, or `Interval`.
      - Automatic runs during every maintenance cycle, as before.
      - Daily times accepts comma-separated local `HH:MM` values (default `06:00, 11:00, 17:00, 21:00`).
-     - Interval runs after the configured number of hours since the last successful run.
+     - Interval runs after the configured number of minutes since the last successful run (default 60 = 1 hour; 1440 = 24 hours).
      - Daily times use the timezone configured for the FreshRSS/PHP runtime.
 5. Click **Submit**
+
+### Per-Category Visibility
+
+Each category's **Feed Digest Summary** panel includes **Hide source feeds from
+Main stream**. When enabled, the category's ordinary source feeds no longer
+appear in Main stream / All; they remain in the category itself and in the
+Feed Digest summary feed for that category. Their unread counts stay visible
+inside the category.
+
+Turning the option back off restores the source feeds' previous Main stream
+visibility automatically. New feeds added to a hidden category start
+category-only as well.
+
+### Shared Digests Category
+
+Category summary feeds (`@ <Category> Summary`) are collected into one shared
+**Digests** category instead of being placed inside the category they summarize.
+External readers such as Reeder group subscriptions by category, so a single
+folder keeps every digest together and easy to reach; in FreshRSS itself the
+summary feeds keep their **Important** priority, so they still appear in
+Main stream / All / Important exactly as before.
+
+The category is created automatically the first time a summary feed is needed.
+You can rename it: Feed Digest remembers the category it created and keeps using
+it, rather than forcing the name back to "Digests". If the category is deleted,
+the next run recreates it (or adopts an existing category named "Digests") and
+moves the summary feeds into it.
 
 ## API Endpoint Examples
 
@@ -130,27 +161,32 @@ Key: sk-or-v1-...
 2. **Feed Check**: For each feed with summarization enabled, it fetches all unread articles
 3. **Article Filtering**:
    - Filters out previously created summary articles
-   - Identifies image-only or too-short articles (< 100 characters)
+   - Skips only image-only articles that carry no text at all
    - Adds explanatory notes to skipped articles (they remain unread for you to review)
 4. **Batch Processing**: Articles are processed in configurable batches
    - Batch size **0** processes every unread article in a single run
    - With a batch size, full batches are processed first, then any remaining unread articles as a final partial batch
    - Each batch is sent to the LLM API in one request for efficiency
    - Each batch succeeds or fails independently
-5. **Summary Creation**: For each batch, a new "summary" article is created with:
+5. **Summary Creation**: For each batch, a "summary" article is created with:
    - One natural, headline-style theme sentence for the whole batch (shown above the TL;DR, separated by a divider)
-   - A detailed plain-text TL;DR overview generated from the batch's per-article summaries (or titles in titles-only mode)
-   - Key-theme bullet points (configurable count, primary language only) listing the most important or recurring themes, each followed by its linked source feed where available
-   - Article titles grouped under one source-feed header per feed (single articles keep a compact feed label)
+   - A detailed plain-text TL;DR overview generated from the batch's per-article summaries (or titles in titles-only mode), preserving important exact figures such as amounts, percentages, rates, counts, and time periods
+   - Key-theme bullet points (configurable count, primary language only) listing the most important or recurring themes, with important exact figures stated in context and each followed by its linked source feed where available
+   - Article titles grouped under one source-feed header per feed (the same list layout for single-article and multi-article feeds)
    - Original article titles (not translated)
    - Concise summaries (2-4 sentences each)
    - Links to original articles
    - Clean, compact, box-free formatting shared by both digest modes
    - With **Titles only** enabled (default), the digest instead lists original titles with source-feed labels, with links to the originals
-6. **Mark as Read**: Only successfully summarized articles are marked as read when enabled for that feed
-7. **Auto-retry**: Failed batches remain unread and are retried after a backoff period; HTTP 429 failures wait until the provider's rate-limit reset time
+6. **Consolidation**: A run produces a **new** summary entry at the current timestamp. If the previous summary is still unread, every article it lists is carried into the new one, and the previous summary is then marked read — so the new summary stays comprehensive and you never face a backlog of pending summaries. Per-article summaries are carried verbatim and never regenerated, so carrying them costs no extra tokens; only the theme, TL;DR, and bullets are regenerated. Because the previous summary is never modified, reading it while a run is in progress cannot hide new articles, and it is retired only after the new summary is safely stored (a failed run leaves it pending for the next attempt). A digest whose articles cannot be recovered from its stored metadata or rendered HTML is left unread and untouched, so its articles are never discarded; the extension logs `could not be recovered` when this happens. Each run logs `Created digest for ...` with how many items were new, carried, and total.
+7. **Mark as Read**: Only successfully summarized articles are marked as read when enabled for that feed
+8. **Auto-retry**: Failed batches remain unread and are retried after a backoff period; HTTP 429 failures wait until the provider's rate-limit reset time
 
 The TL;DR, theme bullets, and batch theme line are produced by one LLM request per multi-article batch. If the theme field is missing from that response, the digest is still created without the theme line; if the TL;DR fails, no summary article is created and source articles remain unread.
+
+Summaries are matched to articles by position. If the model returns a slightly different count than the number of articles sent (for example 12 summaries for 10 articles, or 8 for 10), the batch still succeeds: surplus summaries are ignored and any article without one is listed by its title and link alone. The extension logs `realigning positionally` when this happens. A response with no usable summaries at all is still treated as a failed batch, leaving the articles unread for the next run.
+
+Link-only feeds (such as Hacker News, whose items carry only a headline and a "Comments" link) used to produce digests where every entry was title-only, because the model treated the missing article body as a reason to return an empty summary. The prompt now requires a best-effort one-sentence summary from the headline in that case, so titles-only output is again limited to feeds configured with **Titles only**. If a run still returns no summary for an article, a summary previously generated for the same article is never overwritten by the empty result: when two items share a link, the one carrying a summary is kept and only the remaining fields are refreshed.
 
 ## PHP Timeout Configuration
 
@@ -248,7 +284,7 @@ Actual usage is often lower because many articles are shorter than the configure
 - **Sequential Batches**: Each feed's batches are processed sequentially to avoid timeouts
 - **Retry Backoff**: Failed requests are retried after a short backoff, or after the provider's rate-limit reset time when available
 - **Context Limits**: Very long articles are truncated based on max content length setting
-- **Image-only Articles**: Articles with minimal text are skipped and left unread with an explanatory note
+- **Image-only Articles**: Only articles whose content is an image with no accompanying text are skipped and left unread with an explanatory note; short articles are still summarized
 
 ## Development
 

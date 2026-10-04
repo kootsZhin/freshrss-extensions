@@ -5,49 +5,66 @@
 }
 
 /* One-sentence theme for the whole batch, shown above the TL;DR.
-   Visually distinct: small caps, muted color, separated by a rule below. */
+   The divider goes after the theme block (primary + secondary), so the
+   secondary-language translation stays with the theme it translates. */
 .digest-theme {
 	margin: 0 0 12px;
 	padding-bottom: 10px;
 	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
-	line-height: 1.55;
 }
 
 .digest-theme-label {
+	margin: 0 0 2px;
 	font-size: 0.78em;
 	font-weight: 700;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 	opacity: 0.6;
-	margin-right: 6px;
 }
 
 .digest-theme-text {
+	margin: 0;
 	font-weight: 600;
 	opacity: 0.9;
+	line-height: 1.55;
 }
 
-/* TL;DR block: plain text, no box, no border, no background. */
+/* TL;DR block: plain text. A rule separates the whole block (primary +
+   secondary translation) from the bullets that follow. */
 .digest-tldr {
-	margin: 0 0 10px;
-	line-height: 1.6;
+	margin: 0 0 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
 }
 
 .digest-tldr-label {
-	font-weight: 600;
+	margin: 0 0 2px;
+	font-size: 0.78em;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	opacity: 0.6;
+}
+
+.digest-tldr-text {
+	margin: 0;
+	line-height: 1.6;
 }
 
 /* Secondary-language text: separate paragraph below the primary text, muted. */
 .digest-secondary {
-	display: block;
 	margin: 6px 0 0;
 	opacity: 0.65;
+	line-height: 1.6;
 }
 
-/* Key-theme bullet list: plain markers, tight spacing. */
+/* Key-theme bullet list: plain markers, tight spacing. A rule separates the
+   bullets from the source/title lists that follow. */
 .digest-bullets {
 	margin: 0 0 12px;
 	padding-left: 22px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
 }
 
 .digest-bullets li {
@@ -65,25 +82,8 @@
 	white-space: nowrap;
 }
 
-/* Per-article items: compact, separator line only. */
-.summary-item {
-	padding: 10px 0 8px;
-	margin: 0 0 4px;
-	border-bottom: 1px solid var(--frss-border-color, #e0e0e0);
-}
-
-.summary-item:last-child {
-	border-bottom: none;
-}
-
-.item-feed {
-	display: block;
-	font-size: 0.82em;
-	opacity: 0.7;
-	margin-bottom: 2px;
-}
-
-/* Multiple articles from the same feed: one header, then a compact list. */
+/* Each source feed: one header, then a compact list. The same layout is
+   used whether the feed contributes one article or several. */
 .summary-group {
 	margin: 0 0 4px;
 	padding: 8px 0 6px;
@@ -117,13 +117,9 @@
 	opacity: 0.9;
 }
 
-.summary-item h3 {
-	margin: 0 0 4px;
-	font-size: 1.05em;
-	line-height: 1.35;
-}
-
-.summary-item p {
-	margin: 0;
-	line-height: 1.55;
+/* Publish time shown at the start of each digest line. */
+.group-items li .item-time {
+	opacity: 0.55;
+	font-variant-numeric: tabular-nums;
+	margin-right: 2px;
 }

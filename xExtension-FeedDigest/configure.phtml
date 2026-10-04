@@ -147,7 +147,7 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 				       required="required" />
 				<p class="help-block">
 					<?= _t('ext.feed_digest.max_content_length_help',
-					       'Maximum characters per article content before truncation (500 or more). Helps avoid exceeding LLM context limits. Default 4000 is safe for most models.') ?>
+					       'Maximum visible article-text characters per article before truncation (500 or more). HTML markup and tracking boilerplate do not count toward the limit. Default 4000 is safe for most models.') ?>
 				</p>
 			</div>
 		</div>
@@ -183,6 +183,10 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 		       'Category summaries create one visible native feed named "<category name> Summary" inside the selected category.') ?>
 	</p>
 	<p>
+		<?= _t('ext.feed_digest.category_hide_from_main_stream_blurb',
+		       'You can also hide a whole category\'s source feeds from Main stream / All from the same per-category panel.') ?>
+	</p>
+	<p>
 		<?= _t('ext.feed_digest.category_location',
 		       'Location: Settings → Feeds → [Select a category] → Feed Digest Summary') ?>
 	</p>
@@ -195,6 +199,7 @@ $maxContentLength = $config['max_content_length'] ?? 4000;
 		<li><?= _t('ext.feed_digest.how_step2', 'Unread articles are collected (up to the max articles limit) and sent to the LLM API in one batch.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step3', 'The LLM writes summaries in your destination language, keeping the original titles.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step4', 'A second LLM call creates the batch theme, TL;DR, and key-theme bullet points above the per-article summaries.') ?></li>
+		<li><?= _t('ext.feed_digest.how_step5_consolidate', 'Still-unread digests for the same feed are combined into one: earlier article lists are reused as-is, the theme/TL;DR/bullets are regenerated, and the older digests are marked read.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step5', 'Original articles are marked as read only when enabled for that feed.') ?></li>
 		<li><?= _t('ext.feed_digest.how_step6', 'If any errors occur, articles remain unread and will be retried on the next update.') ?></li>
 	</ol>

@@ -29,7 +29,7 @@ $scheduleModes = array_filter(explode(',', $scheduleMode));
 $scheduleMode = $scheduleModes[array_key_first($scheduleModes)] ?? 'auto';
 $scheduleModes = [$scheduleMode];
 $scheduleTimes = $this->feed->attributeString('feed_digest_schedule_times') ?? '06:00,11:00,17:00,21:00';
-$scheduleInterval = $this->feed->attributeInt('feed_digest_schedule_interval') ?: 24;
+$scheduleInterval = $this->feed->attributeInt('feed_digest_schedule_interval') ?: 60;
 $language = $this->feed->attributeString('feed_digest_language');
 $secondaryLanguage = $this->feed->attributeString('feed_digest_secondary_language');
 $titlesOnly = $this->feed->attributeBoolean('feed_digest_titles_only') ?? true;
@@ -86,10 +86,10 @@ $our_fields = '
 	</div>
 
 	<div class="form-group feed-digest-schedule-interval" data-mode="interval">
-		<label class="group-name" for="feed_digest_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval hours') . '</label>
+		<label class="group-name" for="feed_digest_schedule_interval">' . _t('ext.feed_digest.schedule_interval_label', 'Interval minutes') . '</label>
 		<div class="group-controls">
-			<input type="number" name="feed_digest_schedule_interval" id="feed_digest_schedule_interval" value="' . $scheduleInterval . '" min="1" max="168" class="w50" />
-			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_interval_help', 'Run after this many hours since the last successful scheduled run.') . '</p>
+			<input type="number" name="feed_digest_schedule_interval" id="feed_digest_schedule_interval" value="' . $scheduleInterval . '" min="1" max="10080" class="w50" />
+			<p class="help">' . _i('help') . ' ' . _t('ext.feed_digest.schedule_interval_help', 'Run after this many minutes since the last successful scheduled run (default 60 = 1 hour).') . '</p>
 		</div>
 	</div>
 

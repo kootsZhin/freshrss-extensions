@@ -33,7 +33,7 @@ return [
 		'secondary_language_off' => 'Disabled',
 
 		'max_content_length' => 'Max Content Length per Article',
-		'max_content_length_help' => 'Maximum characters per article content before truncation (500 or more). Helps avoid exceeding LLM context limits. Default 4000 is safe for most models.',
+		'max_content_length_help' => 'Maximum visible article-text characters per article before truncation (500 or more). HTML markup and tracking boilerplate do not count toward the limit. Default 4000 is safe for most models.',
 		'overview_bullets_label' => 'Top-level theme bullets',
 		'overview_bullets_help' => 'How many key-theme bullet points to list above the digest. 0 disables bullets and keeps only the 2-sentence overview.',
 
@@ -49,10 +49,13 @@ return [
 		// Per-category configuration
 		'category_title' => 'Per-Category Configuration',
 		'category_help' => 'Category summaries create one visible native feed named "<category name> Summary" inside the selected category.',
+		'category_hide_from_main_stream_blurb' => 'You can also hide a whole category\'s source feeds from Main stream / All from the same per-category panel.',
 		'category_location' => 'Location: Settings → Feeds → [Select a category] → Feed Digest Summary',
 		'category_setting_title' => 'Feed Digest Summary',
 		'category_setting_label' => 'Create a summary feed for this category',
-		'category_setting_help' => 'Create a visible native feed containing summaries from all feeds in this category.',
+		'category_setting_help' => 'Create a visible native feed containing summaries from all feeds in this category. The summary feed is placed in the shared "Digests" category so external readers can group all digests together.',
+		'category_hide_from_main_stream_label' => 'Hide source feeds from Main stream',
+		'category_hide_from_main_stream_help' => 'Keep this category\'s feeds visible only inside the category (and their own feed page) instead of also showing them in Main stream / All.',
 		'category_batch_size_help' => 'Set to 0 for no limit (summarize everything in one run).',
 
 		// Feed settings
@@ -75,8 +78,8 @@ return [
 		'schedule_interval' => 'Interval',
 		'schedule_times_label' => 'Daily times',
 		'schedule_times_help' => 'Comma-separated local times in HH:MM format. Uses the FreshRSS/PHP timezone.',
-		'schedule_interval_label' => 'Interval hours',
-		'schedule_interval_help' => 'Run after this many hours since the last successful scheduled run.',
+		'schedule_interval_label' => 'Interval minutes',
+		'schedule_interval_help' => 'Run after this many minutes since the last successful scheduled run (default 60 = 1 hour).',
 
 		// How it works
 		'how_it_works_title' => 'How It Works',
@@ -84,6 +87,7 @@ return [
 		'how_step2' => 'Unread articles are collected according to each feed\'s schedule and sent to the LLM API in batches.',
 		'how_step3' => 'The LLM writes summaries in your destination language, keeping the original titles.',
 		'how_step4' => 'A second LLM call creates the batch theme, TL;DR, and key-theme bullet points above the per-article summaries.',
+		'how_step5_consolidate' => 'Still-unread digests for the same feed are combined into one: earlier article lists are reused as-is, the theme/TL;DR/bullets are regenerated, and the older digests are marked read.',
 		'how_step5' => 'Original articles are marked as read only when that feed option is enabled.',
 		'how_step6' => 'If any errors occur, articles remain unread and will be retried on the next update.',
 	],
